@@ -145,9 +145,9 @@ def cron_scraper(request, secret):
     if not expected_secret or secret != expected_secret:
         return HttpResponseForbidden('Invalid secret')
 
-    # Get latest article date in DB before scraping
-    latest_in_db = ParsedArticle.objects.order_by('-post_date').first()
-    latest_date = latest_in_db.post_date if latest_in_db else None
+    # Get oldest article date in DB before scraping
+    oldest_in_db = ParsedArticle.objects.order_by('post_date').first()
+    oldest_date = oldest_in_db.post_date if oldest_in_db else None
 
     # Parse forum for new articles
     new_articles = parse_forum()
@@ -155,9 +155,9 @@ def cron_scraper(request, secret):
     # Filter: only articles newer than latest in DB AND within this week
     monday, sunday = get_current_week_range()
 
-    if latest_date:
-        # Only show articles newer than what was in DB
-        new_this_week = [a for a in new_articles if a.post_date > latest_date and monday <= a.post_date <= sunday]
+    if oldest_date:
+        # Only show articles newer than the oldest in DB
+        new_this_week = [a for a in new_articles if a.post_date > oldest_date and monday <= a.post_date <= sunday]
     else:
         # DB was empty, show all this week's new articles
         new_this_week = [a for a in new_articles if monday <= a.post_date <= sunday]
