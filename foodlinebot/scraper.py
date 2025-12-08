@@ -24,7 +24,11 @@ def parse_forum():
         list of newly saved ParsedArticle objects
     """
     logger.info("Parsing forum...")
-    response = requests.get(FORUM_URL, timeout=30)
+    headers = {
+        'User-Agent': 'YoYo-Bot/1.0',
+        'X-Bot-Secret': 'yoyo2025scraper'  # Cloudflare can check this
+    }
+    response = requests.get(FORUM_URL, headers=headers, timeout=30)
     response.encoding = 'utf-8'
     soup = BeautifulSoup(response.text, 'html.parser')
 

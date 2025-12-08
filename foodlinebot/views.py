@@ -199,7 +199,11 @@ def debug_scraper(request, secret):
         return HttpResponseForbidden('Invalid secret')
 
     try:
-        resp = requests.get(FORUM_URL, timeout=30)
+        headers = {
+            'User-Agent': 'YoYo-Bot/1.0',
+            'X-Bot-Secret': 'yoyo2025scraper'
+        }
+        resp = requests.get(FORUM_URL, headers=headers, timeout=30)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         rows = soup.select('li.row')
