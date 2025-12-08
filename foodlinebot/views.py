@@ -145,16 +145,29 @@ def cron_scraper(request, secret):
     if not expected_secret or secret != expected_secret:
         return HttpResponseForbidden('Invalid secret')
 
+    # Get latest article date in DB before scraping
+    latest_in_db = ParsedArticle.objects.order_by('-post_date').first()
+    latest_date = latest_in_db.post_date if latest_in_db else None
+
     # Parse forum for new articles
     new_articles = parse_forum()
 
-    if new_articles:
-        # Build message
-        response_lines = [f"發現 {len(new_articles)} 篇新文章:"]
-        for article in new_articles:
-            response_lines.append(f"[{article.post_date}] {article.title}")
-            response_lines.append(f"{article.url}")
-        message = "\n".join(response_lines)
+    # Filter: only articles newer than latest in DB AND within this week
+    monday, sunday = get_current_week_range()
+
+    if latest_date:
+        # Only show articles newer than what was in DB
+        new_this_week = [a for a in new_articles if a.post_date > latest_date and monday <= a.post_date <= sunday]
+    else:
+        # DB was empty, show all this week's new articles
+        new_this_week = [a for a in new_articles if monday <= a.post_date <= sunday]
+
+    if new_this_week:
+        # Build message (same format as articles command)
+        response_lines = [f"本週新文章 ({monday.strftime('%m/%d')} - {sunday.strftime('%m/%d')}):"]
+        for article in sorted(new_this_week, key=lambda x: x.post_date):
+            response_lines.append(f"[{article.title}]: {article.url}")
+        message = "\n\n".join(response_lines)
 
         # Push to all authorized users
         with ApiClient(configuration) as api_client:
@@ -170,9 +183,9 @@ def cron_scraper(request, secret):
                 except Exception:
                     pass  # Skip if user blocked bot
 
-        return HttpResponse(f'OK: {len(new_articles)} new articles pushed')
+        return HttpResponse(f'OK: {len(new_this_week)} new articles pushed')
 
-    return HttpResponse('OK: No new articles')
+    return HttpResponse('OK: No new articles this week')
 
 
 @csrf_exempt
