@@ -24,4 +24,5 @@ urlpatterns = [
     path('callback/', views.callback, name='callback'),
     path('cron/<str:secret>/', views.cron_scraper, name='cron_scraper'),
     path('clear/<str:secret>/', views.clear_db, name='clear_db'),
+    path('debug/<str:secret>/', views.debug_scraper, name='debug_scraper'),
 ]

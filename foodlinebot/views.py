@@ -185,3 +185,33 @@ def clear_db(request, secret):
 
     count, _ = ParsedArticle.objects.all().delete()
     return HttpResponse(f'OK: Deleted {count} articles')
+
+
+@csrf_exempt
+def debug_scraper(request, secret):
+    """Debug endpoint to check forum scraping."""
+    import requests
+    from bs4 import BeautifulSoup
+    from .scraper import parse_date_from_title, FORUM_URL
+
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    try:
+        resp = requests.get(FORUM_URL, timeout=30)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        rows = soup.select('li.row')
+
+        lines = [f'Forum URL: {FORUM_URL}', f'Status: {resp.status_code}', f'Rows found: {len(rows)}', '']
+        for row in rows[:15]:
+            title_link = row.select_one('a.topictitle')
+            if title_link:
+                title = title_link.get_text(strip=True)
+                parsed = parse_date_from_title(title)
+                lines.append(f'{parsed} | {title[:50]}')
+
+        return HttpResponse('\n'.join(lines), content_type='text/plain')
+    except Exception as e:
+        return HttpResponse(f'Error: {e}', content_type='text/plain')
