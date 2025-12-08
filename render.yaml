@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: yoyo-linebot
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn mylinebot.wsgi:application"
+    envVars:
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.10.0"
