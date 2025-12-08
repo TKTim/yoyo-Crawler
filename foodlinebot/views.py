@@ -1,6 +1,9 @@
+import logging
 from datetime import date, timedelta
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 from django.http import HttpResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -165,20 +168,26 @@ def handle_text_message(event):
 @require_POST
 def cron_scraper(request, secret):
     """Cron endpoint to scrape and push new articles to LINE."""
+    logger.info("Cron job started")
+
     # Verify secret
     expected_secret = getattr(settings, 'CRON_SECRET', '')
     if not expected_secret or secret != expected_secret:
+        logger.warning("Cron job rejected: invalid secret")
         return HttpResponseForbidden('Invalid secret')
 
     # Get oldest article date in DB before scraping
     oldest_in_db = ParsedArticle.objects.order_by('post_date').first()
     oldest_date = oldest_in_db.post_date if oldest_in_db else None
+    logger.info(f"DB oldest date: {oldest_date}, total articles: {ParsedArticle.objects.count()}")
 
     # Parse forum for new articles
     new_articles = parse_forum()
+    logger.info(f"Scraped {len(new_articles)} new articles from forum")
 
     # Filter: only articles newer than latest in DB AND within this week
     monday, sunday = get_current_week_range()
+    logger.info(f"This week range: {monday} to {sunday}")
 
     if oldest_date:
         # Only show articles newer than the oldest in DB
@@ -186,6 +195,8 @@ def cron_scraper(request, secret):
     else:
         # DB was empty, show all this week's new articles
         new_this_week = [a for a in new_articles if monday <= a.post_date <= sunday]
+
+    logger.info(f"New articles this week to push: {len(new_this_week)}")
 
     if new_this_week:
         # Build message (same format as articles command)
@@ -205,11 +216,14 @@ def cron_scraper(request, secret):
                             messages=[TextMessage(text=message)]
                         )
                     )
-                except Exception:
-                    pass  # Skip if user blocked bot
+                    logger.info(f"Pushed to {target_id}")
+                except Exception as e:
+                    logger.error(f"Failed to push to {target_id}: {e}")
 
+        logger.info(f"Cron job completed: {len(new_this_week)} articles pushed")
         return HttpResponse(f'OK: {len(new_this_week)} new articles pushed')
 
+    logger.info("Cron job completed: no new articles this week")
     return HttpResponse('OK: No new articles this week')
 
 
@@ -223,6 +237,29 @@ def clear_db(request, secret):
 
     count, _ = ParsedArticle.objects.all().delete()
     return HttpResponse(f'OK: Deleted {count} articles')
+
+
+@csrf_exempt
+def test_push(request, secret):
+    """Test push message to a specific target."""
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    target_id = request.GET.get('target', PUSH_TARGETS[0])
+
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=target_id,
+                    messages=[TextMessage(text=f"Test push to {target_id}")]
+                )
+            )
+        return HttpResponse(f'OK: Pushed to {target_id}')
+    except Exception as e:
+        return HttpResponse(f'ERROR: {type(e).__name__}: {e}', status=500)
 
 
 @csrf_exempt
