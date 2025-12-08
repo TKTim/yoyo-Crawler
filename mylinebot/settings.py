@@ -134,6 +134,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
 
+# Cron secret for GitHub Actions trigger
+CRON_SECRET = os.environ.get('CRON_SECRET', '')
+
 # Logging configuration
 LOGGING = {
     'version': 1,

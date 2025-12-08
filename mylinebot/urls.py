@@ -22,4 +22,5 @@ from foodlinebot import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('callback/', views.callback, name='callback'),
+    path('cron/<str:secret>/', views.cron_scraper, name='cron_scraper'),
 ]

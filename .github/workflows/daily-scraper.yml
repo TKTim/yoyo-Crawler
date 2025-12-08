@@ -1,0 +1,17 @@
+name: Daily Article Scraper
+
+on:
+  schedule:
+    # Run at 00:00 UTC every day (08:00 Taiwan time)
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  trigger-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger scraper endpoint
+        run: |
+          curl -X POST "${{ secrets.RENDER_URL }}/cron/${{ secrets.CRON_SECRET }}/" \
+            -H "Content-Type: application/json" \
+            --fail --silent --show-error

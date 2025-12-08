@@ -12,6 +12,7 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
@@ -133,3 +134,42 @@ def handle_text_message(event):
                     messages=[TextMessage(text=response)]
                 )
             )
+
+
+@csrf_exempt
+@require_POST
+def cron_scraper(request, secret):
+    """Cron endpoint to scrape and push new articles to LINE."""
+    # Verify secret
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    # Parse forum for new articles
+    new_articles = parse_forum()
+
+    if new_articles:
+        # Build message
+        response_lines = [f"發現 {len(new_articles)} 篇新文章:"]
+        for article in new_articles:
+            response_lines.append(f"[{article.post_date}] {article.title}")
+            response_lines.append(f"{article.url}")
+        message = "\n".join(response_lines)
+
+        # Push to all authorized users
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            for user_id in AUTHORIZED_USER_IDS:
+                try:
+                    line_bot_api.push_message(
+                        PushMessageRequest(
+                            to=user_id,
+                            messages=[TextMessage(text=message)]
+                        )
+                    )
+                except Exception:
+                    pass  # Skip if user blocked bot
+
+        return HttpResponse(f'OK: {len(new_articles)} new articles pushed')
+
+    return HttpResponse('OK: No new articles')
