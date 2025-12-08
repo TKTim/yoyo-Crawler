@@ -68,13 +68,24 @@ def handle_text_message(event):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # Command to show user ID (for adding to authorized list)
+        # Command to show user ID and group ID
         if text == 'myid':
+            group_id = getattr(event.source, 'group_id', None)
+            room_id = getattr(event.source, 'room_id', None)
+
+            info_lines = []
             if user_id:
+                info_lines.append(f"User ID: {user_id}")
+            if group_id:
+                info_lines.append(f"Group ID: {group_id}")
+            if room_id:
+                info_lines.append(f"Room ID: {room_id}")
+
+            if info_lines:
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text=f"Your ID: {user_id}")]
+                        messages=[TextMessage(text="\n".join(info_lines))]
                     )
                 )
             return
