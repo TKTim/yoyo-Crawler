@@ -9,6 +9,8 @@ services:
         sync: false
       - key: LINE_CHANNEL_SECRET
         sync: false
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
       - key: ALLOWED_HOSTS
         sync: false
       - key: DEBUG
