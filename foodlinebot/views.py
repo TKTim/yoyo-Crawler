@@ -31,6 +31,7 @@ handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 AUTHORIZED_USER_IDS = [
     'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
     'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
+    'C1c6ca63a89d94ad16d3c366f03658c0b'   # 元老院
 ]
 
 # Push notification targets (cron will send to these)
@@ -38,6 +39,7 @@ PUSH_TARGETS = [
     'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
     'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
     'C0e7365c3db71bb31ebf8e5d0c2f94468',  # YoYo Club Group
+    'C1c6ca63a89d94ad16d3c366f03658c0b'   # 元老院
 ]
 
 
@@ -237,29 +239,6 @@ def clear_db(request, secret):
 
     count, _ = ParsedArticle.objects.all().delete()
     return HttpResponse(f'OK: Deleted {count} articles')
-
-
-@csrf_exempt
-def test_push(request, secret):
-    """Test push message to a specific target."""
-    expected_secret = getattr(settings, 'CRON_SECRET', '')
-    if not expected_secret or secret != expected_secret:
-        return HttpResponseForbidden('Invalid secret')
-
-    target_id = request.GET.get('target', PUSH_TARGETS[0])
-
-    try:
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.push_message(
-                PushMessageRequest(
-                    to=target_id,
-                    messages=[TextMessage(text=f"Test push to {target_id}")]
-                )
-            )
-        return HttpResponse(f'OK: Pushed to {target_id}')
-    except Exception as e:
-        return HttpResponse(f'ERROR: {type(e).__name__}: {e}', status=500)
 
 
 @csrf_exempt
