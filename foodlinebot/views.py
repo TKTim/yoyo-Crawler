@@ -173,3 +173,15 @@ def cron_scraper(request, secret):
         return HttpResponse(f'OK: {len(new_articles)} new articles pushed')
 
     return HttpResponse('OK: No new articles')
+
+
+@csrf_exempt
+@require_POST
+def clear_db(request, secret):
+    """Clear all articles from DB."""
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    count, _ = ParsedArticle.objects.all().delete()
+    return HttpResponse(f'OK: Deleted {count} articles')

@@ -56,3 +56,7 @@
 2025-12-08 08:18:00,397 | INFO | foodlinebot.scraper | Parsing complete. Found 0 new article(s)
 2025-12-08 08:18:34,403 | INFO | foodlinebot.scraper | Parsing forum...
 2025-12-08 08:18:35,385 | INFO | foodlinebot.scraper | Parsing complete. Found 0 new article(s)
+2025-12-08 10:16:51,197 | INFO | foodlinebot.scraper | Parsing forum...
+2025-12-08 10:16:51,689 | INFO | foodlinebot.scraper | NEW ARTICLE | Date: 2025-12-14 | Title: 12/14 (Tue.) TEST Bot (Host: TEST) | URL: https://yoyo.club.tw/viewtopic.php?t=5426
+2025-12-08 10:16:51,696 | INFO | foodlinebot.scraper | Parsing complete. Found 1 new article(s)
+2025-12-08 10:16:51,697 | INFO | foodlinebot.scraper | Cleanup: deleted 23 old article(s), kept 20
