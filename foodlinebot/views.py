@@ -28,7 +28,7 @@ handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 AUTHORIZED_USER_IDS = [
     'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
     'Ud675835f36eb4e002a24ad9558e62cbe', # Tiffany
-    'U36595fa4ddd01f4f68d1833187ac9658'
+    'C0e7365c3db71bb31ebf8e5d0c2f94468'  # YoYo Club Group
 ]
 
 
