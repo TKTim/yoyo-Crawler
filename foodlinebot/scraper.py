@@ -64,7 +64,24 @@ def parse_forum():
         logger.info(f"NEW ARTICLE | Date: {post_date} | Title: {title} | URL: {url}")
 
     logger.info(f"Parsing complete. Found {len(new_articles)} new article(s)")
+
+    # Keep only the 20 newest articles
+    cleanup_old_articles(keep=20)
+
     return new_articles
+
+
+def cleanup_old_articles(keep=20):
+    """
+    Remove old articles, keeping only the newest ones.
+    """
+    total = ParsedArticle.objects.count()
+    if total > keep:
+        # Get IDs of articles to keep (newest by post_date)
+        keep_ids = ParsedArticle.objects.order_by('-post_date')[:keep].values_list('id', flat=True)
+        # Delete the rest
+        deleted, _ = ParsedArticle.objects.exclude(id__in=list(keep_ids)).delete()
+        logger.info(f"Cleanup: deleted {deleted} old article(s), kept {keep}")
 
 
 def parse_date_from_title(title):

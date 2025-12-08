@@ -78,8 +78,31 @@ def handle_text_message(event):
                 )
             return
 
+        # Command to show all articles in DB
+        if text in ['db']:
+            # Check if user is authorized - no reply if not
+            if not user_id or user_id not in AUTHORIZED_USER_IDS:
+                return
+
+            articles = ParsedArticle.objects.all().order_by('-post_date')[:20]
+            if articles:
+                response_lines = [f"資料庫文章 (共 {ParsedArticle.objects.count()} 篇，顯示最新 20 篇):"]
+                for article in articles:
+                    response_lines.append(f"[{article.post_date}] {article.title}")
+                response = "\n".join(response_lines)
+            else:
+                response = "資料庫沒有文章"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
         # Command to get this week's articles
-        if text in ['文章', 'articles', '新文章', 'news', 'new']:
+        if text in ['articles']:
             # Check if user is authorized - no reply if not
             if not user_id or user_id not in AUTHORIZED_USER_IDS:
                 return
