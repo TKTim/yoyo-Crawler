@@ -24,11 +24,17 @@ from .models import ParsedArticle
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 
-# Authorized user IDs
+# Authorized user IDs (can use LINE commands)
 AUTHORIZED_USER_IDS = [
     'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
-    'Ud675835f36eb4e002a24ad9558e62cbe', # Tiffany
-    'C0e7365c3db71bb31ebf8e5d0c2f94468'  # YoYo Club Group
+    'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
+]
+
+# Push notification targets (cron will send to these)
+PUSH_TARGETS = [
+    'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
+    'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
+    'C0e7365c3db71bb31ebf8e5d0c2f94468',  # YoYo Club Group
 ]
 
 
@@ -42,6 +48,12 @@ def get_current_week_range():
     monday = today - timedelta(days=days_since_monday)
     sunday = monday + timedelta(days=6)
     return monday, sunday
+
+
+def is_authorized(event):
+    """Check if user is authorized (only checks user_id, not group)."""
+    user_id = getattr(event.source, 'user_id', None)
+    return user_id and user_id in AUTHORIZED_USER_IDS
 
 
 @csrf_exempt
@@ -69,8 +81,11 @@ def handle_text_message(event):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # Command to show user ID and group ID
+        # Command to show user ID and group ID (requires auth)
         if text == 'myid':
+            if not is_authorized(event):
+                return
+
             group_id = getattr(event.source, 'group_id', None)
             room_id = getattr(event.source, 'room_id', None)
 
@@ -93,8 +108,7 @@ def handle_text_message(event):
 
         # Command to show all articles in DB
         if text in ['db']:
-            # Check if user is authorized - no reply if not
-            if not user_id or user_id not in AUTHORIZED_USER_IDS:
+            if not is_authorized(event):
                 return
 
             articles = ParsedArticle.objects.all().order_by('-post_date')[:20]
@@ -116,8 +130,7 @@ def handle_text_message(event):
 
         # Command to get this week's articles
         if text in ['articles']:
-            # Check if user is authorized - no reply if not
-            if not user_id or user_id not in AUTHORIZED_USER_IDS:
+            if not is_authorized(event):
                 return
 
             # Parse forum for new articles first
@@ -181,14 +194,14 @@ def cron_scraper(request, secret):
             response_lines.append(f"[{article.title}]: {article.url}")
         message = "\n\n".join(response_lines)
 
-        # Push to all authorized users
+        # Push to all targets (users and groups)
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
-            for user_id in AUTHORIZED_USER_IDS:
+            for target_id in PUSH_TARGETS:
                 try:
                     line_bot_api.push_message(
                         PushMessageRequest(
-                            to=user_id,
+                            to=target_id,
                             messages=[TextMessage(text=message)]
                         )
                     )
