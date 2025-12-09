@@ -1,0 +1,16 @@
+name: Keep Server Alive
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping server
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_URL }}/callback/" || true
+          echo "Server pinged"
