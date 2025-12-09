@@ -61,6 +61,11 @@ def is_authorized(event):
     return user_id and user_id in AUTHORIZED_USER_IDS
 
 
+def health(request):
+    """Health check endpoint for keep-alive pings."""
+    return HttpResponse('OK')
+
+
 @csrf_exempt
 @require_POST
 def callback(request):
