@@ -138,6 +138,20 @@ def handle_text_message(event):
             )
             return
 
+        # Command to clear all articles from DB
+        if text == 'clear':
+            if not is_authorized(event):
+                return
+
+            count, _ = ParsedArticle.objects.all().delete()
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=f"已清除 {count} 篇文章")]
+                )
+            )
+            return
+
         # Command to get this week's articles
         if text in ['articles']:
             if not is_authorized(event):
