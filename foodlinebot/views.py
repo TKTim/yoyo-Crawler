@@ -206,16 +206,22 @@ def cron_scraper(request, secret):
     new_articles = parse_forum()
     logger.info(f"Scraped {len(new_articles)} new articles from forum")
 
-    # Filter: only articles newer than latest in DB AND within this week
+    # Get current week range
     monday, sunday = get_current_week_range()
     logger.info(f"This week range: {monday} to {sunday}")
 
+    # Get all articles within this week from DB (not just newly scraped)
+    week_articles = ParsedArticle.objects.filter(
+        post_date__gte=monday,
+        post_date__lte=sunday
+    ).order_by('post_date')
+
+    # Filter to only include articles newer than what was in DB before this scrape
     if oldest_date:
-        # Only show articles newer than the oldest in DB
-        new_this_week = [a for a in new_articles if a.post_date > oldest_date and monday <= a.post_date <= sunday]
+        new_this_week = [a for a in week_articles if a.post_date > oldest_date]
     else:
-        # DB was empty, show all this week's new articles
-        new_this_week = [a for a in new_articles if monday <= a.post_date <= sunday]
+        # DB was empty before, all this week's articles are new
+        new_this_week = list(week_articles)
 
     logger.info(f"New articles this week to push: {len(new_this_week)}")
 
