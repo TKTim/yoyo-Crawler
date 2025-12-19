@@ -19,10 +19,13 @@ def parse_forum():
     """
     Parse the forum and save new articles.
     Date is extracted from article title (e.g., "12/9 (Tue.) Topic Name").
+    Only saves articles within this week or earlier (not future articles).
 
     Returns:
         list of newly saved ParsedArticle objects
     """
+    from datetime import timedelta
+
     logger.info("Parsing forum...")
     headers = {
         'User-Agent': 'YoYo-Bot/1.0',
@@ -31,6 +34,11 @@ def parse_forum():
     response = requests.get(FORUM_URL, headers=headers, timeout=30)
     response.encoding = 'utf-8'
     soup = BeautifulSoup(response.text, 'html.parser')
+
+    # Calculate end of this week (Sunday)
+    today = date.today()
+    days_until_sunday = 6 - today.weekday()
+    end_of_week = today + timedelta(days=days_until_sunday)
 
     new_articles = []
 
@@ -52,6 +60,11 @@ def parse_forum():
 
         if post_date is None:
             # Skip articles without date in title
+            continue
+
+        # Skip future articles (after this week)
+        if post_date > end_of_week:
+            logger.info(f"SKIPPED (future) | Date: {post_date} | Title: {title}")
             continue
 
         # Check if already in database
