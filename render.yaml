@@ -3,7 +3,7 @@ services:
     name: yoyo-linebot
     runtime: python
     buildCommand: "./build.sh"
-    startCommand: "gunicorn mylinebot_config.wsgi:application"
+    startCommand: "python manage.py migrate && gunicorn mylinebot_config.wsgi:application"
     envVars:
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false
