@@ -44,6 +44,14 @@ def parse_forum():
 
     # Find all topic rows - phpBB forum structure
     topic_rows = soup.select('li.row')
+    logger.info(f"Found {len(topic_rows)} topic rows in forum")
+
+    # Log current DB state
+    db_count = ParsedArticle.objects.count()
+    db_urls = list(ParsedArticle.objects.values_list('url', flat=True))
+    logger.info(f"DB state: {db_count} articles")
+    for db_url in db_urls:
+        logger.debug(f"  DB URL: {db_url}")
 
     for row in topic_rows:
         # Get article title and URL
@@ -60,6 +68,7 @@ def parse_forum():
 
         if post_date is None:
             # Skip articles without date in title
+            logger.debug(f"SKIPPED (no date) | Title: {title}")
             continue
 
         # Skip future articles (after this week)
@@ -69,6 +78,7 @@ def parse_forum():
 
         # Check if already in database
         if ParsedArticle.objects.filter(url=url).exists():
+            logger.info(f"SKIPPED (exists) | Date: {post_date} | URL: {url}")
             continue
 
         # Save new article
@@ -143,8 +153,8 @@ def clean_url(url):
     params = parse_qs(parsed.query)
     # Remove sid parameter
     params.pop('sid', None)
-    # Rebuild URL without sid
-    clean_query = urlencode(params, doseq=True)
+    # Sort params to ensure consistent ordering (prevents duplicates from param order differences)
+    clean_query = urlencode(sorted(params.items()), doseq=True)
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{clean_query}" if clean_query else f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
 

@@ -189,7 +189,9 @@ def handle_text_message(event):
 @require_POST
 def cron_scraper(request, secret):
     """Cron endpoint to scrape and push new articles to LINE."""
-    logger.info("Cron job started")
+    logger.info("=" * 50)
+    logger.info("CRON JOB STARTED")
+    logger.info("=" * 50)
 
     # Verify secret
     expected_secret = getattr(settings, 'CRON_SECRET', '')
@@ -197,18 +199,24 @@ def cron_scraper(request, secret):
         logger.warning("Cron job rejected: invalid secret")
         return HttpResponseForbidden('Invalid secret')
 
+    # Get current week range
+    monday, sunday = get_current_week_range()
+    logger.info(f"Today: {date.today()} | Week range: {monday} to {sunday}")
+
     # Parse forum for new articles (only returns articles not already in DB, and saves them)
     new_articles = parse_forum()
     logger.info(f"Scraped {len(new_articles)} new articles from forum")
 
-    # Get current week range
-    monday, sunday = get_current_week_range()
-    logger.info(f"This week range: {monday} to {sunday}")
+    # Log details of new articles
+    for article in new_articles:
+        logger.info(f"  NEW: {article.post_date} | {article.title[:40]} | {article.url}")
 
     # Filter new articles to only those within this week
     new_this_week = [a for a in new_articles if monday <= a.post_date <= sunday]
 
     logger.info(f"New articles this week to push: {len(new_this_week)}")
+    for article in new_this_week:
+        logger.info(f"  PUSH: {article.post_date} | {article.title[:40]}")
 
     if new_this_week:
         # Build message (same format as articles command)
@@ -233,9 +241,11 @@ def cron_scraper(request, secret):
                     logger.error(f"Failed to push to {target_id}: {e}")
 
         logger.info(f"Cron job completed: {len(new_this_week)} articles pushed")
+        logger.info("=" * 50)
         return HttpResponse(f'OK: {len(new_this_week)} new articles pushed')
 
     logger.info("Cron job completed: no new articles this week")
+    logger.info("=" * 50)
     return HttpResponse('OK: No new articles this week')
 
 
