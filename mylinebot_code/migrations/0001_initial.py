@@ -22,6 +22,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 'ordering': ['-post_date', '-created_at'],
+                'db_table': 'foodlinebot_parsedarticle',
             },
         ),
     ]
