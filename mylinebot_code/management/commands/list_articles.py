@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from foodlinebot.models import ParsedArticle
+from mylinebot_code.models import ParsedArticle
 
 
 class Command(BaseCommand):

@@ -31,7 +31,7 @@ handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 AUTHORIZED_USER_IDS = [
     'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
     'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
-    'C1c6ca63a89d94ad16d3c366f03658c0b'   # 元老院
+    'C721c49584bd64c321d4d1a469839ab62'   # 菁英院
 ]
 
 # Push notification targets (cron will send to these)
@@ -39,7 +39,7 @@ PUSH_TARGETS = [
     'U36595fa4ddd01f4f68d1833187ac9658'  # Tim
     # 'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
     # 'C0e7365c3db71bb31ebf8e5d0c2f94468',  # YoYo Club Group
-    # 'C1c6ca63a89d94ad16d3c366f03658c0b'   # 元老院
+    # 'C721c49584bd64c321d4d1a469839ab62'   # 菁英院
 ]
 
 

@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from foodlinebot.scraper import parse_forum
+from mylinebot_code.scraper import parse_forum
 
 
 class Command(BaseCommand):

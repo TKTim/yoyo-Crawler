@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Set Django settings
-os.environ['DJANGO_SETTINGS_MODULE'] = 'mylinebot.settings'
+os.environ['DJANGO_SETTINGS_MODULE'] = 'mylinebot_config.settings'
 
 # Load environment variables from .env
 from dotenv import load_dotenv

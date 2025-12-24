@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'foodlinebot',
+    'mylinebot_code',
 ]
 
 MIDDLEWARE = [
@@ -56,7 +56,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'mylinebot.urls'
+ROOT_URLCONF = 'mylinebot_config.urls'
 
 TEMPLATES = [
     {
@@ -73,7 +73,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'mylinebot.wsgi.application'
+WSGI_APPLICATION = 'mylinebot_config.wsgi.application'
 
 
 # Database
@@ -159,7 +159,7 @@ LOGGING = {
         },
     },
     'loggers': {
-        'foodlinebot': {
+        'mylinebot_code': {
             'handlers': ['console', 'file'],
             'level': 'INFO',
         },
