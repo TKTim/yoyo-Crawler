@@ -13,3 +13,4 @@ class ParsedArticle(models.Model):
 
     class Meta:
         ordering = ['-post_date', '-created_at']
+        db_table = 'foodlinebot_parsedarticle'  # Keep old table name after app rename
