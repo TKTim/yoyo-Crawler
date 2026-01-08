@@ -20,3 +20,6 @@ cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table';\")
 print('Tables:', [t[0] for t in cursor.fetchall()])
 conn.close()
 "
+
+echo "=== Loading articles from Gist ==="
+python manage.py setup_gist --load || echo "Gist load skipped (not configured or failed)"

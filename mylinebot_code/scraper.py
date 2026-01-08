@@ -95,6 +95,10 @@ def parse_forum():
     # Keep only the 20 newest articles
     cleanup_old_articles(keep=20)
 
+    # Save to Gist for persistence across Render restarts
+    from .gist_storage import save_articles_to_gist
+    save_articles_to_gist()
+
     return new_articles
 
 
