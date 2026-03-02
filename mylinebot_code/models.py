@@ -14,3 +14,13 @@ class ParsedArticle(models.Model):
     class Meta:
         ordering = ['-post_date', '-created_at']
         db_table = 'foodlinebot_parsedarticle'  # Keep old table name after app rename
+
+
+class AuthorizedUser(models.Model):
+    """Authorized users who can use protected bot commands."""
+    user_id = models.CharField(max_length=100, unique=True)
+    label = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.label} ({self.user_id})" if self.label else self.user_id

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 GITHUB_TOKEN = os.environ.get('GITHUB_GIST_TOKEN', '')
 GIST_ID = os.environ.get('GIST_ID', '')
 GIST_FILENAME = 'yoyo_articles.json'
+GIST_USERS_FILENAME = 'yoyo_authorized_users.json'
 
 
 def save_articles_to_gist():
@@ -106,6 +107,88 @@ def load_articles_from_gist():
         return True
     except Exception as e:
         logger.error(f"Failed to load from Gist: {e}")
+        return False
+
+
+def save_users_to_gist():
+    """Save all authorized users from DB to GitHub Gist."""
+    if not GITHUB_TOKEN or not GIST_ID:
+        logger.warning("Gist storage not configured (missing GITHUB_GIST_TOKEN or GIST_ID)")
+        return False
+
+    from .models import AuthorizedUser
+
+    users = list(AuthorizedUser.objects.all().values('user_id', 'label'))
+    content = json.dumps(users, ensure_ascii=False, indent=2)
+
+    try:
+        response = requests.patch(
+            f'https://api.github.com/gists/{GIST_ID}',
+            headers={
+                'Authorization': f'token {GITHUB_TOKEN}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            json={
+                'files': {
+                    GIST_USERS_FILENAME: {'content': content}
+                }
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        logger.info(f"Saved {len(users)} authorized users to Gist")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save users to Gist: {e}")
+        return False
+
+
+def load_users_from_gist():
+    """Load authorized users from GitHub Gist into DB."""
+    if not GITHUB_TOKEN or not GIST_ID:
+        logger.warning("Gist storage not configured (missing GITHUB_GIST_TOKEN or GIST_ID)")
+        return False
+
+    from django.db import connection
+    from .models import AuthorizedUser
+
+    table_name = AuthorizedUser._meta.db_table
+    if table_name not in connection.introspection.table_names():
+        logger.warning(f"Table '{table_name}' does not exist yet, skipping Gist load")
+        return False
+
+    try:
+        response = requests.get(
+            f'https://api.github.com/gists/{GIST_ID}',
+            headers={
+                'Authorization': f'token {GITHUB_TOKEN}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+
+        gist_data = response.json()
+        file_content = gist_data.get('files', {}).get(GIST_USERS_FILENAME, {}).get('content', '[]')
+        users = json.loads(file_content)
+
+        if AuthorizedUser.objects.exists():
+            logger.info(f"DB already has {AuthorizedUser.objects.count()} authorized users, skipping Gist load")
+            return True
+
+        loaded = 0
+        for user in users:
+            _, created = AuthorizedUser.objects.get_or_create(
+                user_id=user['user_id'],
+                defaults={'label': user.get('label', '')}
+            )
+            if created:
+                loaded += 1
+
+        logger.info(f"Loaded {loaded} authorized users from Gist into DB")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to load users from Gist: {e}")
         return False
 
 

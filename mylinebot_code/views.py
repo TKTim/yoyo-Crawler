@@ -21,18 +21,12 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 from .scraper import parse_forum
-from .models import ParsedArticle
+from .models import ParsedArticle, AuthorizedUser
+from .gist_storage import save_users_to_gist
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
-
-# Authorized user IDs (can use LINE commands)
-AUTHORIZED_USER_IDS = [
-    'U36595fa4ddd01f4f68d1833187ac9658',  # Tim
-    'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
-    'C721c49584bd64c321d4d1a469839ab62'   # 菁英院
-]
 
 # Push notification targets (cron will send to these)
 PUSH_TARGETS = [
@@ -56,9 +50,9 @@ def get_current_week_range():
 
 
 def is_authorized(event):
-    """Check if user is authorized (only checks user_id, not group)."""
+    """Check if user is authorized via DB lookup."""
     user_id = getattr(event.source, 'user_id', None)
-    return user_id and user_id in AUTHORIZED_USER_IDS
+    return user_id and AuthorizedUser.objects.filter(user_id=user_id).exists()
 
 
 def health(request):
@@ -84,12 +78,37 @@ def callback(request):
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
     """Handle text messages from LINE."""
-    text = event.message.text.strip().lower()
+    raw_text = event.message.text.strip()
+    text = raw_text.lower()
     # Safely get user_id (works in both 1-on-1 and group chats)
     user_id = getattr(event.source, 'user_id', None)
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
+
+        # Help command (no auth required)
+        if text == 'help':
+            help_lines = [
+                "📋 指令列表：",
+                "",
+                "▸ help — 顯示此說明",
+                "▸ myid — 顯示你的 User/Group/Room ID",
+                "",
+                "以下指令需要授權：",
+                "▸ articles — 取得本週文章",
+                "▸ db — 顯示資料庫文章列表",
+                "▸ clear — 清除資料庫所有文章",
+                "▸ adduser <id> <名稱> — 新增授權用戶",
+                "▸ removeuser <id> — 移除授權用戶",
+                "▸ listusers — 列出所有授權用戶",
+            ]
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text="\n".join(help_lines))]
+                )
+            )
+            return
 
         # Command to show user ID and group ID (requires auth)
         if text == 'myid':
@@ -181,6 +200,86 @@ def handle_text_message(event):
                     messages=[TextMessage(text=response)]
                 )
             )
+            return
+
+        # Command to add an authorized user
+        if text.startswith('adduser'):
+            if not is_authorized(event):
+                return
+
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 2:
+                response = "用法: adduser <id> [名稱]"
+            else:
+                new_id = parts[1]
+                label = parts[2] if len(parts) > 2 else ''
+                _, created = AuthorizedUser.objects.get_or_create(
+                    user_id=new_id,
+                    defaults={'label': label}
+                )
+                if created:
+                    save_users_to_gist()
+                    response = f"已新增授權用戶: {label or new_id}"
+                else:
+                    response = f"用戶已存在: {new_id}"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command to remove an authorized user
+        if text.startswith('removeuser'):
+            if not is_authorized(event):
+                return
+
+            parts = raw_text.split(maxsplit=1)
+            if len(parts) < 2:
+                response = "用法: removeuser <id>"
+            else:
+                remove_id = parts[1]
+                deleted, _ = AuthorizedUser.objects.filter(user_id=remove_id).delete()
+                if deleted:
+                    save_users_to_gist()
+                    response = f"已移除授權用戶: {remove_id}"
+                else:
+                    response = f"找不到用戶: {remove_id}"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command to list all authorized users
+        if text == 'listusers':
+            if not is_authorized(event):
+                return
+
+            users = AuthorizedUser.objects.all().order_by('created_at')
+            if users:
+                response_lines = [f"授權用戶 (共 {users.count()} 位):"]
+                for u in users:
+                    if u.label:
+                        response_lines.append(f"▸ {u.label} ({u.user_id})")
+                    else:
+                        response_lines.append(f"▸ {u.user_id}")
+                response = "\n".join(response_lines)
+            else:
+                response = "沒有授權用戶"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
 
 
 @csrf_exempt
