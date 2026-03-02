@@ -358,6 +358,7 @@ def clear_db(request, secret):
     return HttpResponse(f'OK: Deleted {count} articles')
 
 
+@csrf_exempt
 def api_users(request, secret):
     """API endpoint to list/add/remove authorized users."""
     expected_secret = getattr(settings, 'CRON_SECRET', '')
