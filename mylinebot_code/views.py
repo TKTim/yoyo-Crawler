@@ -358,6 +358,42 @@ def clear_db(request, secret):
     return HttpResponse(f'OK: Deleted {count} articles')
 
 
+def api_users(request, secret):
+    """API endpoint to list/add/remove authorized users."""
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    # POST: add or remove a user
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        user_id = request.POST.get('user_id', '')
+        label = request.POST.get('label', '')
+
+        if action == 'add' and user_id:
+            _, created = AuthorizedUser.objects.get_or_create(
+                user_id=user_id, defaults={'label': label}
+            )
+            save_users_to_gist()
+            status = 'created' if created else 'already exists'
+            return HttpResponse(f'{status}: {user_id}', content_type='text/plain')
+
+        if action == 'remove' and user_id:
+            deleted, _ = AuthorizedUser.objects.filter(user_id=user_id).delete()
+            save_users_to_gist()
+            status = 'removed' if deleted else 'not found'
+            return HttpResponse(f'{status}: {user_id}', content_type='text/plain')
+
+        return HttpResponse('Bad request: need action (add/remove) and user_id', status=400)
+
+    # GET: list all users
+    users = AuthorizedUser.objects.all().order_by('created_at')
+    lines = [f'Authorized users ({users.count()}):']
+    for u in users:
+        lines.append(f'  {u.user_id}  {u.label}')
+    return HttpResponse('\n'.join(lines), content_type='text/plain')
+
+
 @csrf_exempt
 def debug_scraper(request, secret):
     """Debug endpoint to check forum scraping."""
