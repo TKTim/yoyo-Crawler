@@ -93,8 +93,6 @@ def handle_text_message(event):
 
         # Command to show user ID and group ID (requires auth)
         if text == 'myid':
-            if not is_authorized(event):
-                return
 
             group_id = getattr(event.source, 'group_id', None)
             room_id = getattr(event.source, 'room_id', None)

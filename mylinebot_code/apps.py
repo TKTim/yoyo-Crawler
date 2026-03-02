@@ -8,6 +8,12 @@ class MylinebotCodeConfig(AppConfig):
     def ready(self):
         """Load articles from Gist on startup (for Render's ephemeral filesystem)."""
         import os
+        import sys
+
+        # Skip during management commands (migrate, collectstatic, etc.)
+        if len(sys.argv) > 1 and sys.argv[1] in ('migrate', 'makemigrations', 'collectstatic', 'shell', 'dbshell'):
+            return
+
         # Only run in main process, not in migrations or shell
         if os.environ.get('RUN_MAIN') != 'true' and not os.environ.get('RENDER'):
             return

@@ -60,7 +60,14 @@ def load_articles_from_gist():
         logger.warning("Gist storage not configured (missing GITHUB_GIST_TOKEN or GIST_ID)")
         return False
 
+    from django.db import connection
     from .models import ParsedArticle
+
+    # Check if the table exists before querying (migrations may not have run yet)
+    table_name = ParsedArticle._meta.db_table
+    if table_name not in connection.introspection.table_names():
+        logger.warning(f"Table '{table_name}' does not exist yet, skipping Gist load")
+        return False
 
     try:
         response = requests.get(
