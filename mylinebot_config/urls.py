@@ -27,4 +27,5 @@ urlpatterns = [
     path('clear/<str:secret>/', views.clear_db, name='clear_db'),
     path('debug/<str:secret>/', views.debug_scraper, name='debug_scraper'),
     path('users/<str:secret>/', views.api_users, name='api_users'),
+    path('targets/<str:secret>/', views.api_targets, name='api_targets'),
 ]

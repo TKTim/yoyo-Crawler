@@ -21,20 +21,16 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 from .scraper import parse_forum
-from .models import ParsedArticle, AuthorizedUser
-from .gist_storage import save_users_to_gist
+from .models import ParsedArticle, AuthorizedUser, PushTarget
+from .gist_storage import save_users_to_gist, save_targets_to_gist
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 
-# Push notification targets (cron will send to these)
-PUSH_TARGETS = [
-    'U36595fa4ddd01f4f68d1833187ac9658'  # Tim
-    # 'Ud675835f36eb4e002a24ad9558e62cbe',  # Tiffany
-    # 'C0e7365c3db71bb31ebf8e5d0c2f94468',  # YoYo Club Group
-    # 'C721c49584bd64c321d4d1a469839ab62'   # 菁英院
-]
+def get_push_targets():
+    """Get push notification targets from PushTarget table."""
+    return list(PushTarget.objects.values_list('target_id', flat=True))
 
 
 def get_current_week_range():
@@ -101,6 +97,9 @@ def handle_text_message(event):
                 "▸ adduser <id> <名稱> — 新增授權用戶",
                 "▸ removeuser <id> — 移除授權用戶",
                 "▸ listusers — 列出所有授權用戶",
+                "▸ addtarget <id> <名稱> — 新增推播對象",
+                "▸ removetarget <id> — 移除推播對象",
+                "▸ listtargets — 列出所有推播對象",
             ]
             line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -281,6 +280,85 @@ def handle_text_message(event):
             )
             return
 
+        # Command to add a push target
+        if text.startswith('addtarget'):
+            if not is_authorized(event):
+                return
+
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 2:
+                response = "用法: addtarget <id> [名稱]"
+            else:
+                new_id = parts[1]
+                label = parts[2] if len(parts) > 2 else ''
+                _, created = PushTarget.objects.get_or_create(
+                    target_id=new_id,
+                    defaults={'label': label}
+                )
+                if created:
+                    save_targets_to_gist()
+                    response = f"已新增推播對象: {label or new_id}"
+                else:
+                    response = f"推播對象已存在: {new_id}"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command to remove a push target
+        if text.startswith('removetarget'):
+            if not is_authorized(event):
+                return
+
+            parts = raw_text.split(maxsplit=1)
+            if len(parts) < 2:
+                response = "用法: removetarget <id>"
+            else:
+                remove_id = parts[1]
+                deleted, _ = PushTarget.objects.filter(target_id=remove_id).delete()
+                if deleted:
+                    save_targets_to_gist()
+                    response = f"已移除推播對象: {remove_id}"
+                else:
+                    response = f"找不到推播對象: {remove_id}"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command to list all push targets
+        if text == 'listtargets':
+            if not is_authorized(event):
+                return
+
+            targets = PushTarget.objects.all().order_by('created_at')
+            if targets:
+                response_lines = [f"推播對象 (共 {targets.count()} 位):"]
+                for t in targets:
+                    if t.label:
+                        response_lines.append(f"▸ {t.label} ({t.target_id})")
+                    else:
+                        response_lines.append(f"▸ {t.target_id}")
+                response = "\n".join(response_lines)
+            else:
+                response = "沒有推播對象"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
 
 @csrf_exempt
 @require_POST
@@ -325,7 +403,7 @@ def cron_scraper(request, secret):
         # Push to all targets (users and groups)
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
-            for target_id in PUSH_TARGETS:
+            for target_id in get_push_targets():
                 try:
                     line_bot_api.push_message(
                         PushMessageRequest(
@@ -392,6 +470,41 @@ def api_users(request, secret):
     lines = [f'Authorized users ({users.count()}):']
     for u in users:
         lines.append(f'  {u.user_id}  {u.label}')
+    return HttpResponse('\n'.join(lines), content_type='text/plain')
+
+
+@csrf_exempt
+def api_targets(request, secret):
+    """API endpoint to list/add/remove push targets."""
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        return HttpResponseForbidden('Invalid secret')
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        target_id = request.POST.get('target_id', '')
+        label = request.POST.get('label', '')
+
+        if action == 'add' and target_id:
+            _, created = PushTarget.objects.get_or_create(
+                target_id=target_id, defaults={'label': label}
+            )
+            save_targets_to_gist()
+            status = 'created' if created else 'already exists'
+            return HttpResponse(f'{status}: {target_id}', content_type='text/plain')
+
+        if action == 'remove' and target_id:
+            deleted, _ = PushTarget.objects.filter(target_id=target_id).delete()
+            save_targets_to_gist()
+            status = 'removed' if deleted else 'not found'
+            return HttpResponse(f'{status}: {target_id}', content_type='text/plain')
+
+        return HttpResponse('Bad request: need action (add/remove) and target_id', status=400)
+
+    targets = PushTarget.objects.all().order_by('created_at')
+    lines = [f'Push targets ({targets.count()}):']
+    for t in targets:
+        lines.append(f'  {t.target_id}  {t.label}')
     return HttpResponse('\n'.join(lines), content_type='text/plain')
 
 

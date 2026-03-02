@@ -24,3 +24,13 @@ class AuthorizedUser(models.Model):
 
     def __str__(self):
         return f"{self.label} ({self.user_id})" if self.label else self.user_id
+
+
+class PushTarget(models.Model):
+    """Users/groups that receive cron push notifications."""
+    target_id = models.CharField(max_length=100, unique=True)
+    label = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.label} ({self.target_id})" if self.label else self.target_id
