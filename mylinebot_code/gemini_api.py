@@ -1,6 +1,6 @@
 """
 Google Gemini API client for nutrition estimation.
-Uses gemini-2.5-flash-lite-preview-06-17 (free tier).
+Tries multiple models with automatic fallback on rate limit / quota errors.
 """
 import base64
 import json
@@ -12,8 +12,67 @@ import requests
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = 'gemini-2.5-flash-lite'
-GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
+
+# Models to try in order — falls back to next on rate limit / quota / server errors
+GEMINI_MODELS = [
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+]
+
+# HTTP status codes that trigger fallback to next model
+_RETRYABLE_STATUS_CODES = {429, 500, 503, 403}
+
+
+def _gemini_request(payload, timeout=15):
+    """
+    Send a request to Gemini API, trying each model in GEMINI_MODELS until one succeeds.
+    Returns the parsed JSON response data, or raises the last exception on total failure.
+    """
+    last_error = None
+    for model in GEMINI_MODELS:
+        url = f'{GEMINI_BASE_URL}/{model}:generateContent'
+        try:
+            response = requests.post(
+                url,
+                params={'key': GEMINI_API_KEY},
+                json=payload,
+                timeout=timeout,
+            )
+            if response.status_code in _RETRYABLE_STATUS_CODES:
+                logger.warning(f"Gemini model {model} returned {response.status_code}, trying next model")
+                last_error = requests.exceptions.HTTPError(
+                    f"{response.status_code} for model {model}", response=response
+                )
+                continue
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout as e:
+            logger.warning(f"Gemini model {model} timed out, trying next model")
+            last_error = e
+            continue
+        except requests.exceptions.HTTPError:
+            raise
+        except Exception as e:
+            logger.warning(f"Gemini model {model} failed: {e}, trying next model")
+            last_error = e
+            continue
+    raise last_error
+
+
+def _parse_gemini_json(data):
+    """Extract and parse JSON from Gemini response text."""
+    text = data['candidates'][0]['content']['parts'][0]['text']
+    text = text.strip()
+    if text.startswith('```'):
+        text = text.split('\n', 1)[1] if '\n' in text else text[3:]
+    if text.endswith('```'):
+        text = text[:-3]
+    text = text.strip()
+    if text.startswith('json'):
+        text = text[4:].strip()
+    return json.loads(text)
 
 
 def estimate_nutrition(food_name, description=''):
@@ -40,30 +99,8 @@ def estimate_nutrition(food_name, description=''):
     )
 
     try:
-        response = requests.post(
-            GEMINI_URL,
-            params={'key': GEMINI_API_KEY},
-            json={
-                'contents': [{'parts': [{'text': prompt}]}]
-            },
-            timeout=15
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        text = data['candidates'][0]['content']['parts'][0]['text']
-
-        # Strip markdown code fences if present
-        text = text.strip()
-        if text.startswith('```'):
-            text = text.split('\n', 1)[1] if '\n' in text else text[3:]
-        if text.endswith('```'):
-            text = text[:-3]
-        text = text.strip()
-        if text.startswith('json'):
-            text = text[4:].strip()
-
-        result = json.loads(text)
+        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
+        result = _parse_gemini_json(data)
         return {
             'calories': float(result.get('calories', 0)),
             'protein': float(result.get('protein', 0)),
@@ -98,35 +135,16 @@ def estimate_nutrition_from_image(image_bytes, mime_type):
     )
 
     try:
-        response = requests.post(
-            GEMINI_URL,
-            params={'key': GEMINI_API_KEY},
-            json={
-                'contents': [{
-                    'parts': [
-                        {'inline_data': {'mime_type': mime_type, 'data': image_b64}},
-                        {'text': prompt},
-                    ]
-                }]
-            },
-            timeout=30
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        text = data['candidates'][0]['content']['parts'][0]['text']
-
-        # Strip markdown code fences if present
-        text = text.strip()
-        if text.startswith('```'):
-            text = text.split('\n', 1)[1] if '\n' in text else text[3:]
-        if text.endswith('```'):
-            text = text[:-3]
-        text = text.strip()
-        if text.startswith('json'):
-            text = text[4:].strip()
-
-        result = json.loads(text)
+        payload = {
+            'contents': [{
+                'parts': [
+                    {'inline_data': {'mime_type': mime_type, 'data': image_b64}},
+                    {'text': prompt},
+                ]
+            }]
+        }
+        data = _gemini_request(payload, timeout=30)
+        result = _parse_gemini_json(data)
         return {
             'food_name': result.get('food_name'),
             'calories': float(result.get('calories', 0)),
@@ -178,17 +196,7 @@ def generate_diet_advice(foods, tdee=None, user_prompt=''):
     )
 
     try:
-        response = requests.post(
-            GEMINI_URL,
-            params={'key': GEMINI_API_KEY},
-            json={
-                'contents': [{'parts': [{'text': prompt}]}]
-            },
-            timeout=15
-        )
-        response.raise_for_status()
-
-        data = response.json()
+        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
         return data['candidates'][0]['content']['parts'][0]['text'].strip()
     except Exception as e:
         logger.error(f"Gemini diet advice error: {e}")
