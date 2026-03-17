@@ -23,7 +23,7 @@ def estimate_nutrition(food_name, description=''):
     """
     if not GEMINI_API_KEY:
         logger.warning("GEMINI_API_KEY not set, cannot estimate nutrition")
-        return {'calories': None, 'protein': None, 'carbs': None, 'fat': None}
+        return {'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
     food_desc = food_name
     if description:
@@ -31,9 +31,10 @@ def estimate_nutrition(food_name, description=''):
 
     prompt = (
         f"Estimate the nutritional content of this food: \"{food_desc}\".\n"
-        "Return ONLY a JSON object with these numeric fields (no markdown, no explanation):\n"
-        '{"calories": <number>, "protein": <number>, "carbs": <number>, "fat": <number>}\n'
+        "Return ONLY a JSON object with these fields (no markdown, no extra text):\n"
+        '{"calories": <number>, "protein": <number>, "carbs": <number>, "fat": <number>, "basis": "<brief explanation>"}\n'
         "Values should be in kcal for calories and grams for protein/carbs/fat.\n"
+        '"basis" should be a short explanation (under 80 chars) of what you assumed (e.g. "1 medium apple ~182g").\n'
         "If you cannot estimate, use 0 for all values."
     )
 
@@ -67,10 +68,11 @@ def estimate_nutrition(food_name, description=''):
             'protein': float(result.get('protein', 0)),
             'carbs': float(result.get('carbs', 0)),
             'fat': float(result.get('fat', 0)),
+            'basis': result.get('basis', ''),
         }
     except Exception as e:
         logger.error(f"Gemini API error for '{food_desc}': {e}")
-        return {'calories': None, 'protein': None, 'carbs': None, 'fat': None}
+        return {'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
 
 def generate_diet_advice(foods, tdee=None, user_prompt=''):

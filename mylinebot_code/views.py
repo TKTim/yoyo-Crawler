@@ -193,12 +193,14 @@ def handle_text_message(event):
 
                 if nutrition['calories'] is not None:
                     response = (
-                        f"Added: {food_name} "
-                        f"({nutrition['calories']:.0f} kcal, "
-                        f"{nutrition['protein']:.1f}g protein, "
-                        f"{nutrition['carbs']:.1f}g carbs, "
-                        f"{nutrition['fat']:.1f}g fat)"
+                        f"Added: {food_name}\n"
+                        f"{nutrition['calories']:.0f} kcal, "
+                        f"{nutrition['protein']:.1f}g P, "
+                        f"{nutrition['carbs']:.1f}g C, "
+                        f"{nutrition['fat']:.1f}g F"
                     )
+                    if nutrition.get('basis'):
+                        response += f"\n({nutrition['basis']})"
                 else:
                     response = f"Added: {food_name} (nutrition estimation unavailable)"
 
