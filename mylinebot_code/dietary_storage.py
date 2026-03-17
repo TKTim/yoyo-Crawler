@@ -111,6 +111,22 @@ def add_food_entry(user_id, food_entry):
     return save_dietary_logs()
 
 
+def remove_food_entry(user_id, index):
+    """
+    Remove a food entry by 1-based index from today's log.
+    Returns the removed food dict on success, None if index is invalid.
+    """
+    today = _today_str()
+    foods = _dietary_logs.get(user_id, {}).get(today, {}).get('foods', [])
+
+    if not foods or index < 1 or index > len(foods):
+        return None
+
+    removed = foods.pop(index - 1)
+    save_dietary_logs()
+    return removed
+
+
 def get_today_log(user_id):
     """Return today's food list for a user, or empty list."""
     today = _today_str()
@@ -129,8 +145,8 @@ def get_all_users_today():
 
 
 def prune_old_entries():
-    """Remove entries older than 30 days for all users."""
-    cutoff = (datetime.now(TW_TZ) - timedelta(days=30)).strftime('%Y-%m-%d')
+    """Remove entries older than 7 days for all users."""
+    cutoff = (datetime.now(TW_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
     for user_id in list(_dietary_logs.keys()):
         dates = _dietary_logs[user_id]
         old_dates = [d for d in dates if d < cutoff]

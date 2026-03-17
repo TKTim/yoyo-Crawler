@@ -23,7 +23,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from .scraper import parse_forum
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, get_today_log, get_all_users_today
+from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_all_users_today
 from .gemini_api import estimate_nutrition
 
 # Initialize LINE Bot API
@@ -121,6 +121,7 @@ def handle_text_message(event):
                 "",
                 "飲食追蹤（不需授權）：",
                 "▸ add {食物} {描述} — 記錄食物攝取",
+                "▸ remove {編號} — 刪除今日食物紀錄",
                 "▸ today — 顯示今日飲食紀錄",
                 "▸ report — 產生今日飲食報告",
                 "",
@@ -198,6 +199,27 @@ def handle_text_message(event):
 
                 if not saved:
                     response += "\n(Warning: failed to save to storage)"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: remove food by index (no auth required)
+        if text.startswith('remove '):
+            parts = raw_text.split(maxsplit=1)
+            if len(parts) < 2 or not parts[1].isdigit():
+                response = "Usage: remove {number}\nUse 'today' to see the numbered list."
+            else:
+                index = int(parts[1])
+                removed = remove_food_entry(user_id, index)
+                if removed:
+                    response = f"Removed: {removed['name']}"
+                else:
+                    response = f"Invalid index: {index}. Use 'today' to see the list."
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
