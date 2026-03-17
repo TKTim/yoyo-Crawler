@@ -67,14 +67,17 @@ def build_daily_report(foods):
         c = food.get('carbs')
         f = food.get('fat')
 
+        desc = food.get('description', '')
+        name_str = f"{food['name']} ({desc})" if desc else food['name']
+
         if cal is not None:
-            lines.append(f"{i}. {food['name']} — {cal:.0f} kcal, {p:.1f}g P, {c:.1f}g C, {f:.1f}g F")
+            lines.append(f"{i}. {name_str} — {cal:.0f} kcal, {p:.1f}g P, {c:.1f}g C, {f:.1f}g F")
             total_cal += cal
             total_p += p or 0
             total_c += c or 0
             total_f += f or 0
         else:
-            lines.append(f"{i}. {food['name']} — nutrition unavailable")
+            lines.append(f"{i}. {name_str} — nutrition unavailable")
 
     lines.append(f"\nTotal: {total_cal:.0f} kcal, {total_p:.1f}g protein, {total_c:.1f}g carbs, {total_f:.1f}g fat")
     return "\n".join(lines)
