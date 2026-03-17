@@ -16,6 +16,7 @@ GIST_ID = os.environ.get('GIST_ID', '')
 GIST_FILENAME = 'yoyo_articles.json'
 GIST_USERS_FILENAME = 'yoyo_authorized_users.json'
 GIST_TARGETS_FILENAME = 'yoyo_push_targets.json'
+GIST_DIETARY_FILENAME = 'yoyo_dietary_logs.json'
 
 
 def save_articles_to_gist():
@@ -272,6 +273,140 @@ def load_targets_from_gist():
         return True
     except Exception as e:
         logger.error(f"Failed to load push targets from Gist: {e}")
+        return False
+
+
+def save_dietary_to_gist():
+    """Save all FoodEntry + UserTdee records from DB to Gist as JSON backup."""
+    if not GITHUB_TOKEN or not GIST_ID:
+        logger.warning("Gist storage not configured (missing GITHUB_GIST_TOKEN or GIST_ID)")
+        return False
+
+    from collections import defaultdict
+    from .models import FoodEntry, UserTdee
+    from .dietary_storage import prune_old_entries
+
+    prune_old_entries()
+
+    # Build the same JSON structure as the old in-memory dict:
+    # { "user_id": { "tdee": 2000, "2026-03-17": { "foods": [...] } } }
+    data = defaultdict(dict)
+
+    for tdee_obj in UserTdee.objects.all():
+        data[tdee_obj.user_id]['tdee'] = tdee_obj.tdee
+
+    for entry in FoodEntry.objects.all().order_by('added_at'):
+        date_str = entry.date.isoformat()
+        user_data = data[entry.user_id]
+        if date_str not in user_data:
+            user_data[date_str] = {'foods': []}
+        user_data[date_str]['foods'].append({
+            'name': entry.name,
+            'description': entry.description,
+            'calories': entry.calories,
+            'protein': entry.protein,
+            'carbs': entry.carbs,
+            'fat': entry.fat,
+            'basis': entry.basis,
+            'added_at': entry.added_at.strftime('%Y-%m-%dT%H:%M:%S') if entry.added_at else '',
+        })
+
+    content = json.dumps(dict(data), ensure_ascii=False, indent=2)
+
+    try:
+        response = requests.patch(
+            f'https://api.github.com/gists/{GIST_ID}',
+            headers={
+                'Authorization': f'token {GITHUB_TOKEN}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            json={
+                'files': {
+                    GIST_DIETARY_FILENAME: {'content': content}
+                }
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        logger.info("Saved dietary logs to Gist")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save dietary logs to Gist: {e}")
+        return False
+
+
+def load_dietary_from_gist():
+    """Load dietary logs from Gist into DB. Only restores if DB tables are empty."""
+    if not GITHUB_TOKEN or not GIST_ID:
+        logger.warning("Gist storage not configured (missing GITHUB_GIST_TOKEN or GIST_ID)")
+        return False
+
+    from django.db import connection
+    from .models import FoodEntry, UserTdee
+
+    # Check tables exist
+    tables = connection.introspection.table_names()
+    for model in (FoodEntry, UserTdee):
+        table_name = model._meta.db_table
+        if table_name not in tables:
+            logger.warning(f"Table '{table_name}' does not exist yet, skipping dietary Gist load")
+            return False
+
+    # Skip if DB already has data
+    if FoodEntry.objects.exists() or UserTdee.objects.exists():
+        logger.info("DB already has dietary data, skipping Gist load")
+        return True
+
+    try:
+        response = requests.get(
+            f'https://api.github.com/gists/{GIST_ID}',
+            headers={
+                'Authorization': f'token {GITHUB_TOKEN}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+
+        gist_data = response.json()
+        file_content = gist_data.get('files', {}).get(GIST_DIETARY_FILENAME, {}).get('content', '{}')
+        dietary_data = json.loads(file_content)
+
+        loaded_foods = 0
+        loaded_tdee = 0
+
+        for user_id, user_data in dietary_data.items():
+            # Restore TDEE
+            if 'tdee' in user_data:
+                UserTdee.objects.get_or_create(
+                    user_id=user_id,
+                    defaults={'tdee': user_data['tdee']},
+                )
+                loaded_tdee += 1
+
+            # Restore food entries
+            for key, value in user_data.items():
+                if key == 'tdee':
+                    continue
+                date_obj = date.fromisoformat(key)
+                for food in value.get('foods', []):
+                    FoodEntry.objects.create(
+                        user_id=user_id,
+                        date=date_obj,
+                        name=food.get('name', ''),
+                        description=food.get('description', ''),
+                        calories=food.get('calories'),
+                        protein=food.get('protein'),
+                        carbs=food.get('carbs'),
+                        fat=food.get('fat'),
+                        basis=food.get('basis', ''),
+                    )
+                    loaded_foods += 1
+
+        logger.info(f"Loaded {loaded_foods} food entries and {loaded_tdee} TDEE settings from Gist into DB")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to load dietary logs from Gist: {e}")
         return False
 
 

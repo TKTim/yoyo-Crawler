@@ -3,7 +3,7 @@ name: Keep Server Alive
 on:
   schedule:
     # Run every 35 minutes
-    - cron: '*/35 * * * *'
+    - cron: '*/13 * * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:

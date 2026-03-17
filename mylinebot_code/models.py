@@ -34,3 +34,32 @@ class PushTarget(models.Model):
 
     def __str__(self):
         return f"{self.label} ({self.target_id})" if self.label else self.target_id
+
+
+class FoodEntry(models.Model):
+    """One row per food item logged by a user."""
+    user_id = models.CharField(max_length=100, db_index=True)
+    date = models.DateField(db_index=True)
+    name = models.CharField(max_length=200)
+    description = models.CharField(max_length=500, blank=True, default='')
+    calories = models.FloatField(null=True)
+    protein = models.FloatField(null=True)
+    carbs = models.FloatField(null=True)
+    fat = models.FloatField(null=True)
+    basis = models.CharField(max_length=200, blank=True, default='')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-added_at']
+
+    def __str__(self):
+        return f"{self.user_id} - {self.date} - {self.name}"
+
+
+class UserTdee(models.Model):
+    """One row per user's TDEE setting."""
+    user_id = models.CharField(max_length=100, unique=True)
+    tdee = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.user_id}: {self.tdee} kcal"
