@@ -146,6 +146,19 @@ def get_today_log(user_id):
     return _dietary_logs.get(user_id, {}).get(today, {}).get('foods', [])
 
 
+def get_history(user_id):
+    """Return dict of {date: foods} for all dates the user has data, sorted newest first."""
+    user_data = _dietary_logs.get(user_id, {})
+    result = {}
+    for key, value in user_data.items():
+        if key == 'tdee':
+            continue
+        foods = value.get('foods', [])
+        if foods:
+            result[key] = foods
+    return dict(sorted(result.items(), reverse=True))
+
+
 def get_all_users_today():
     """Return dict of {user_id: [foods]} for all users with entries today."""
     today = _today_str()

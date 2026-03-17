@@ -2,6 +2,7 @@
 Google Gemini API client for nutrition estimation.
 Uses gemini-2.5-flash-lite-preview-06-17 (free tier).
 """
+import base64
 import json
 import logging
 import os
@@ -73,6 +74,70 @@ def estimate_nutrition(food_name, description=''):
     except Exception as e:
         logger.error(f"Gemini API error for '{food_desc}': {e}")
         return {'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
+
+
+def estimate_nutrition_from_image(image_bytes, mime_type):
+    """
+    Call Gemini API to estimate nutrition from a food photo.
+    Returns dict with keys: food_name, calories, protein, carbs, fat, basis.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not set, cannot estimate nutrition from image")
+        return {'food_name': None, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
+
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+
+    prompt = (
+        "Look at this food photo and estimate its nutritional content.\n"
+        "Return ONLY a JSON object with these fields (no markdown, no extra text):\n"
+        '{"food_name": "<name of the food>", "calories": <number>, "protein": <number>, "carbs": <number>, "fat": <number>, "basis": "<brief explanation>"}\n'
+        "Values should be in kcal for calories and grams for protein/carbs/fat.\n"
+        '"food_name" should be a concise name for the food (e.g. "Chicken rice", "Caesar salad").\n'
+        '"basis" should be a short explanation (under 80 chars) of what you assumed (e.g. "1 bowl of chicken rice ~400g").\n'
+        "If you cannot identify the food, use null for food_name and 0 for all values."
+    )
+
+    try:
+        response = requests.post(
+            GEMINI_URL,
+            params={'key': GEMINI_API_KEY},
+            json={
+                'contents': [{
+                    'parts': [
+                        {'inline_data': {'mime_type': mime_type, 'data': image_b64}},
+                        {'text': prompt},
+                    ]
+                }]
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        text = data['candidates'][0]['content']['parts'][0]['text']
+
+        # Strip markdown code fences if present
+        text = text.strip()
+        if text.startswith('```'):
+            text = text.split('\n', 1)[1] if '\n' in text else text[3:]
+        if text.endswith('```'):
+            text = text[:-3]
+        text = text.strip()
+        if text.startswith('json'):
+            text = text[4:].strip()
+
+        result = json.loads(text)
+        return {
+            'food_name': result.get('food_name'),
+            'calories': float(result.get('calories', 0)),
+            'protein': float(result.get('protein', 0)),
+            'carbs': float(result.get('carbs', 0)),
+            'fat': float(result.get('fat', 0)),
+            'basis': result.get('basis', ''),
+        }
+    except Exception as e:
+        logger.error(f"Gemini API image error: {e}")
+        return {'food_name': None, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
 
 def generate_diet_advice(foods, tdee=None, user_prompt=''):

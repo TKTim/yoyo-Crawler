@@ -18,13 +18,14 @@ from linebot.v3.messaging import (
     PushMessageRequest,
     TextMessage,
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging.api import MessagingApiBlob
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 
 from .scraper import parse_forum
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_all_users_today, set_tdee, get_tdee
-from .gemini_api import estimate_nutrition, generate_diet_advice
+from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
+from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, generate_diet_advice
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -108,6 +109,21 @@ def handle_text_message(event):
     """Handle text messages from LINE."""
     raw_text = event.message.text.strip()
     text = raw_text.lower()
+
+    # Chinese command aliases
+    chinese_aliases = {
+        '加': 'add',
+        '刪除': 'remove',
+        '今天': 'today',
+        '報告': 'report',
+        '歷史': 'history',
+    }
+    for zh, en in chinese_aliases.items():
+        if text == zh or text.startswith(zh + ' '):
+            raw_text = en + raw_text[len(zh):]
+            text = raw_text.lower()
+            break
+
     # Safely get user_id (works in both 1-on-1 and group chats)
     user_id = getattr(event.source, 'user_id', None)
 
@@ -124,8 +140,10 @@ def handle_text_message(event):
                 "",
                 "飲食追蹤（不需授權）：",
                 "▸ add {食物} {描述} — 記錄食物攝取",
+                "▸ 直接傳食物照片 — AI 辨識並記錄",
                 "▸ remove {編號} — 刪除今日食物紀錄",
                 "▸ today — 顯示今日飲食紀錄",
+                "▸ history — 過去 7 天飲食摘要",
                 "▸ set tdee {數字} — 設定每日熱量目標",
                 "▸ report — 飲食報告 + AI 建議",
                 "▸ report {問題} — 自訂飲食問題",
@@ -240,6 +258,29 @@ def handle_text_message(event):
         if text == 'today':
             foods = get_today_log(user_id)
             response = build_daily_report(foods)
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: history (no auth required)
+        if text == 'history':
+            history = get_history(user_id)
+            if not history:
+                response = "No food logged in the past 7 days."
+            else:
+                lines = ["Past 7 days:"]
+                for date_str, foods in history.items():
+                    total_cal = sum(f.get('calories', 0) or 0 for f in foods)
+                    count = len(foods)
+                    # Format date as MM/DD
+                    display_date = date_str[5:].replace('-', '/')
+                    lines.append(f"{display_date} — {total_cal:.0f} kcal ({count} items)")
+                response = "\n".join(lines)
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -519,6 +560,79 @@ def handle_text_message(event):
                 )
             )
             return
+
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    """Handle image messages — identify food from photo and log nutrition."""
+    user_id = getattr(event.source, 'user_id', None)
+    message_id = event.message.id
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        blob_api = MessagingApiBlob(api_client)
+
+        try:
+            # Download image content
+            image_response = blob_api.get_message_content(message_id)
+            image_bytes = image_response
+            mime_type = 'image/jpeg'
+
+            # Estimate nutrition from image
+            result = estimate_nutrition_from_image(image_bytes, mime_type)
+
+            food_name = result.get('food_name')
+            if not food_name:
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="Could not identify food in this photo. Try a clearer photo or use 'add {food name}'.")]
+                    )
+                )
+                return
+
+            food_entry = {
+                'name': food_name,
+                'description': '',
+                'calories': result['calories'],
+                'protein': result['protein'],
+                'carbs': result['carbs'],
+                'fat': result['fat'],
+                'basis': result.get('basis', ''),
+            }
+
+            saved = add_food_entry(user_id, food_entry)
+
+            if result['calories'] is not None:
+                response = (
+                    f"Added: {food_name}\n"
+                    f"{result['calories']:.0f} kcal, "
+                    f"{result['protein']:.1f}g P, "
+                    f"{result['carbs']:.1f}g C, "
+                    f"{result['fat']:.1f}g F"
+                )
+                if result.get('basis'):
+                    response += f"\n({result['basis']})"
+            else:
+                response = f"Added: {food_name} (nutrition estimation unavailable)"
+
+            if not saved:
+                response += "\n(Warning: failed to save to storage)"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+        except Exception as e:
+            logger.error(f"Image message handling error: {e}")
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text="Failed to process the image. Please try again.")]
+                )
+            )
 
 
 @csrf_exempt
