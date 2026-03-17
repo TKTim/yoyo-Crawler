@@ -269,10 +269,75 @@ Scheduled task that scrapes forum and pushes new articles to `PUSH_TARGETS`.
 
 ## Endpoints
 
-| Endpoint              | Method | Description                |
-|-----------------------|--------|----------------------------|
-| `/callback/`          | POST   | LINE webhook               |
-| `/health/`            | GET    | Health check (keep-alive)  |
-| `/cron/<secret>/`     | POST   | Cron scraper               |
-| `/clear/<secret>/`    | POST   | Clear all articles         |
-| `/debug/<secret>/`    | GET    | Debug scraper output       |
+| Endpoint                | Method    | Description                |
+|-------------------------|-----------|----------------------------|
+| `/callback/`            | POST      | LINE webhook               |
+| `/health/`              | GET       | Health check (keep-alive)  |
+| `/cron/<secret>/`       | POST      | Cron scraper               |
+| `/clear/<secret>/`      | POST      | Clear all articles         |
+| `/debug/<secret>/`      | GET       | Debug scraper output       |
+| `/users/<secret>/`      | GET, POST | Manage authorized users    |
+| `/targets/<secret>/`    | GET, POST | Manage push targets        |
+
+---
+
+## API
+
+All API endpoints require `<secret>` matching the `CRON_SECRET` environment variable. Invalid secret returns `403 Forbidden`.
+
+### `GET /users/<secret>/`
+
+List all authorized users.
+
+**Response** (plain text):
+```
+Authorized users (2):
+  U1234567890abcdef  Tim
+  U0987654321fedcba  Alice
+```
+
+### `POST /users/<secret>/`
+
+Add or remove an authorized user.
+
+**Parameters** (form data or JSON):
+
+| Parameter | Required | Description            |
+|-----------|----------|------------------------|
+| `action`  | Yes      | `add` or `remove`      |
+| `user_id` | Yes      | LINE user ID           |
+| `label`   | No       | Display name for user  |
+
+**Response**:
+- Add: `created: <user_id>` or `already exists: <user_id>`
+- Remove: `removed: <user_id>` or `not found: <user_id>`
+- Missing params: `400 Bad request: need action (add/remove) and user_id`
+
+---
+
+### `GET /targets/<secret>/`
+
+List all push targets.
+
+**Response** (plain text):
+```
+Push targets (1):
+  C1234567890abcdef  English Group
+```
+
+### `POST /targets/<secret>/`
+
+Add or remove a push target.
+
+**Parameters** (form data or JSON):
+
+| Parameter   | Required | Description            |
+|-------------|----------|------------------------|
+| `action`    | Yes      | `add` or `remove`      |
+| `target_id` | Yes      | LINE user/group ID     |
+| `label`     | No       | Display name for target|
+
+**Response**:
+- Add: `created: <target_id>` or `already exists: <target_id>`
+- Remove: `removed: <target_id>` or `not found: <target_id>`
+- Missing params: `400 Bad request: need action (add/remove) and target_id`

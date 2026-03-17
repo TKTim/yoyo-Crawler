@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 FORUM_URL = "https://yoyo.club.tw/viewforum.php?f=2"
 BASE_URL = "https://yoyo.club.tw/"
-
+# host: https://yoyo-crawler.onrender.com
 
 def parse_forum():
     """
@@ -29,7 +29,7 @@ def parse_forum():
     logger.info("Parsing forum...")
     headers = {
         'User-Agent': 'YoYo-Bot/1.0',
-        'X-Bot-Secret': 'yoyo2025scraper'  # Cloudflare can check this
+        'X-Bot-Secret': 'yoyo2025scraper',
     }
     response = requests.get(FORUM_URL, headers=headers, timeout=30)
     response.encoding = 'utf-8'

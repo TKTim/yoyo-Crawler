@@ -522,14 +522,16 @@ def debug_scraper(request, secret):
     try:
         headers = {
             'User-Agent': 'YoYo-Bot/1.0',
-            'X-Bot-Secret': 'yoyo2025scraper'
+            'X-Bot-Secret': 'yoyo2025scraper',
         }
         resp = requests.get(FORUM_URL, headers=headers, timeout=30)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         rows = soup.select('li.row')
 
-        lines = [f'Forum URL: {FORUM_URL}', f'Status: {resp.status_code}', f'Rows found: {len(rows)}', '']
+        lines = [f'Forum URL: {FORUM_URL}', f'Status: {resp.status_code}', f'Rows found: {len(rows)}',
+                 f'Response headers: {dict(resp.headers)}',
+                 f'Body (first 500 chars): {resp.text[:500]}', '']
         for row in rows[:15]:
             title_link = row.select_one('a.topictitle')
             if title_link:
