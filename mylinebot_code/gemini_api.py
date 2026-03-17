@@ -1,6 +1,6 @@
 """
 Google Gemini API client for nutrition estimation.
-Uses gemini-2.0-flash (free tier: 15 RPM, 1M tokens/day).
+Uses gemini-2.5-flash-lite-preview-06-17 (free tier).
 """
 import json
 import logging
@@ -11,7 +11,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = 'gemini-2.0-flash'
+GEMINI_MODEL = 'gemini-2.5-flash-lite'
 GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
 
 
