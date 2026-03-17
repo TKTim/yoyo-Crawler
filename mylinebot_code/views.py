@@ -23,6 +23,8 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from .scraper import parse_forum
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
+from .dietary_storage import add_food_entry, get_today_log, get_all_users_today
+from .gemini_api import estimate_nutrition
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -49,6 +51,33 @@ def is_authorized(event):
     """Check if user is authorized via DB lookup."""
     user_id = getattr(event.source, 'user_id', None)
     return user_id and AuthorizedUser.objects.filter(user_id=user_id).exists()
+
+
+def build_daily_report(foods):
+    """Build a daily food report message from a list of food entries."""
+    if not foods:
+        return "No food logged today."
+
+    lines = ["Today's food log:"]
+    total_cal = total_p = total_c = total_f = 0
+
+    for i, food in enumerate(foods, 1):
+        cal = food.get('calories')
+        p = food.get('protein')
+        c = food.get('carbs')
+        f = food.get('fat')
+
+        if cal is not None:
+            lines.append(f"{i}. {food['name']} — {cal:.0f} kcal, {p:.1f}g P, {c:.1f}g C, {f:.1f}g F")
+            total_cal += cal
+            total_p += p or 0
+            total_c += c or 0
+            total_f += f or 0
+        else:
+            lines.append(f"{i}. {food['name']} — nutrition unavailable")
+
+    lines.append(f"\nTotal: {total_cal:.0f} kcal, {total_p:.1f}g protein, {total_c:.1f}g carbs, {total_f:.1f}g fat")
+    return "\n".join(lines)
 
 
 def health(request):
@@ -90,6 +119,11 @@ def handle_text_message(event):
                 "▸ help — 顯示此說明",
                 "▸ myid — 顯示你的 User/Group/Room ID",
                 "",
+                "飲食追蹤（不需授權）：",
+                "▸ add {食物} {描述} — 記錄食物攝取",
+                "▸ today — 顯示今日飲食紀錄",
+                "▸ report — 產生今日飲食報告",
+                "",
                 "以下指令需要授權：",
                 "▸ articles — 取得本週文章",
                 "▸ db — 顯示資料庫文章列表",
@@ -130,6 +164,73 @@ def handle_text_message(event):
                         messages=[TextMessage(text="\n".join(info_lines))]
                     )
                 )
+            return
+
+        # Command: add food (no auth required)
+        if text.startswith('add '):
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 2:
+                response = "Usage: add {food_name} {description}"
+            else:
+                food_name = parts[1]
+                description = parts[2] if len(parts) > 2 else ''
+
+                nutrition = estimate_nutrition(food_name, description)
+
+                food_entry = {
+                    'name': food_name,
+                    'description': description,
+                    **nutrition,
+                }
+
+                saved = add_food_entry(user_id, food_entry)
+
+                if nutrition['calories'] is not None:
+                    response = (
+                        f"Added: {food_name} "
+                        f"({nutrition['calories']:.0f} kcal, "
+                        f"{nutrition['protein']:.1f}g protein, "
+                        f"{nutrition['carbs']:.1f}g carbs, "
+                        f"{nutrition['fat']:.1f}g fat)"
+                    )
+                else:
+                    response = f"Added: {food_name} (nutrition estimation unavailable)"
+
+                if not saved:
+                    response += "\n(Warning: failed to save to storage)"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: today (no auth required)
+        if text == 'today':
+            foods = get_today_log(user_id)
+            response = build_daily_report(foods)
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: report (no auth required) — same as daily auto-report
+        if text == 'report':
+            foods = get_today_log(user_id)
+            response = build_daily_report(foods)
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
             return
 
         # Command to show all articles in DB
@@ -542,3 +643,45 @@ def debug_scraper(request, secret):
         return HttpResponse('\n'.join(lines), content_type='text/plain')
     except Exception as e:
         return HttpResponse(f'Error: {e}', content_type='text/plain')
+
+
+@csrf_exempt
+@require_POST
+def dietary_report_cron(request, secret):
+    """Cron endpoint to send daily dietary reports to all users with entries today."""
+    logger.info("=" * 50)
+    logger.info("DIETARY REPORT CRON STARTED")
+    logger.info("=" * 50)
+
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        logger.warning("Dietary report cron rejected: invalid secret")
+        return HttpResponseForbidden('Invalid secret')
+
+    users_today = get_all_users_today()
+    logger.info(f"Users with entries today: {len(users_today)}")
+
+    if not users_today:
+        logger.info("No dietary entries today, nothing to report")
+        return HttpResponse('OK: No entries today')
+
+    sent_count = 0
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        for uid, foods in users_today.items():
+            report = build_daily_report(foods)
+            try:
+                line_bot_api.push_message(
+                    PushMessageRequest(
+                        to=uid,
+                        messages=[TextMessage(text=f"Daily Diet Report:\n\n{report}")]
+                    )
+                )
+                sent_count += 1
+                logger.info(f"Sent dietary report to {uid}")
+            except Exception as e:
+                logger.error(f"Failed to send dietary report to {uid}: {e}")
+
+    logger.info(f"Dietary report cron completed: {sent_count} reports sent")
+    logger.info("=" * 50)
+    return HttpResponse(f'OK: {sent_count} reports sent')

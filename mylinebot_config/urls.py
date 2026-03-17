@@ -28,4 +28,5 @@ urlpatterns = [
     path('debug/<str:secret>/', views.debug_scraper, name='debug_scraper'),
     path('users/<str:secret>/', views.api_users, name='api_users'),
     path('targets/<str:secret>/', views.api_targets, name='api_targets'),
+    path('dietary-report/<str:secret>/', views.dietary_report_cron, name='dietary_report_cron'),
 ]

@@ -20,9 +20,11 @@ class MylinebotCodeConfig(AppConfig):
 
         try:
             from .gist_storage import load_articles_from_gist, load_users_from_gist, load_targets_from_gist
+            from .dietary_storage import load_dietary_logs
             load_articles_from_gist()
             load_users_from_gist()
             load_targets_from_gist()
+            load_dietary_logs()
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Failed to load from Gist on startup: {e}")

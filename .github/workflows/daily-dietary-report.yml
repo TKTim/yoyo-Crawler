@@ -1,0 +1,17 @@
+name: Daily Dietary Report
+
+on:
+  schedule:
+    # Run at 14:00 UTC every day (22:00 Taiwan time)
+    - cron: '0 14 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  trigger-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger dietary report endpoint
+        run: |
+          curl -X POST "${{ secrets.RENDER_URL }}/dietary-report/${{ secrets.CRON_SECRET }}/" \
+            -H "Content-Type: application/json" \
+            --fail --silent --show-error
