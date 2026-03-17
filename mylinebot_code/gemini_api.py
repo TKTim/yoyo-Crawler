@@ -71,3 +71,58 @@ def estimate_nutrition(food_name, description=''):
     except Exception as e:
         logger.error(f"Gemini API error for '{food_desc}': {e}")
         return {'calories': None, 'protein': None, 'carbs': None, 'fat': None}
+
+
+def generate_diet_advice(foods, tdee=None, user_prompt=''):
+    """
+    Ask Gemini for dietary advice based on today's food log.
+    Returns advice string, or None on failure.
+    """
+    if not GEMINI_API_KEY:
+        return None
+
+    food_summary = []
+    total_cal = 0
+    for f in foods:
+        cal = f.get('calories')
+        if cal is not None:
+            food_summary.append(f"- {f['name']}: {cal:.0f} kcal, {f.get('protein', 0):.1f}g P, {f.get('carbs', 0):.1f}g C, {f.get('fat', 0):.1f}g F")
+            total_cal += cal
+        else:
+            food_summary.append(f"- {f['name']}: nutrition unknown")
+
+    food_list = "\n".join(food_summary) if food_summary else "No food logged."
+
+    tdee_info = ""
+    if tdee:
+        remaining = tdee - total_cal
+        tdee_info = f"\nUser's TDEE: {tdee} kcal/day. Remaining budget: {remaining:.0f} kcal."
+
+    if user_prompt:
+        question = user_prompt
+    else:
+        question = "Give brief dietary advice based on today's intake. What's missing? What should I eat next? Keep it concise (under 200 characters)."
+
+    prompt = (
+        f"Today's food log:\n{food_list}\n"
+        f"Total so far: {total_cal:.0f} kcal{tdee_info}\n\n"
+        f"User's question: {question}\n"
+        "Answer in the same language as the user's question. Be concise and practical."
+    )
+
+    try:
+        response = requests.post(
+            GEMINI_URL,
+            params={'key': GEMINI_API_KEY},
+            json={
+                'contents': [{'parts': [{'text': prompt}]}]
+            },
+            timeout=15
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        return data['candidates'][0]['content']['parts'][0]['text'].strip()
+    except Exception as e:
+        logger.error(f"Gemini diet advice error: {e}")
+        return None

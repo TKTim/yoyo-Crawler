@@ -23,8 +23,8 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from .scraper import parse_forum
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_all_users_today
-from .gemini_api import estimate_nutrition
+from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_all_users_today, set_tdee, get_tdee
+from .gemini_api import estimate_nutrition, generate_diet_advice
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -123,7 +123,9 @@ def handle_text_message(event):
                 "▸ add {食物} {描述} — 記錄食物攝取",
                 "▸ remove {編號} — 刪除今日食物紀錄",
                 "▸ today — 顯示今日飲食紀錄",
-                "▸ report — 產生今日飲食報告",
+                "▸ set tdee {數字} — 設定每日熱量目標",
+                "▸ report — 飲食報告 + AI 建議",
+                "▸ report {問題} — 自訂飲食問題",
                 "",
                 "以下指令需要授權：",
                 "▸ articles — 取得本週文章",
@@ -242,15 +244,46 @@ def handle_text_message(event):
             )
             return
 
-        # Command: report (no auth required) — same as daily auto-report
-        if text == 'report':
-            foods = get_today_log(user_id)
-            response = build_daily_report(foods)
+        # Command: set tdee (no auth required)
+        if text.startswith('set tdee '):
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 3 or not parts[2].isdigit():
+                response = "Usage: set tdee {number}\nExample: set tdee 2000"
+            else:
+                tdee_val = int(parts[2])
+                set_tdee(user_id, tdee_val)
+                response = f"TDEE set to {tdee_val} kcal/day"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: report [prompt] (no auth required) — daily report with AI advice
+        if text == 'report' or text.startswith('report '):
+            foods = get_today_log(user_id)
+            report_lines = build_daily_report(foods)
+
+            tdee = get_tdee(user_id)
+            if tdee:
+                total_cal = sum(f.get('calories', 0) or 0 for f in foods)
+                remaining = tdee - total_cal
+                report_lines += f"\n\nTDEE: {tdee} kcal | Remaining: {remaining:.0f} kcal"
+
+            # Get AI advice
+            user_prompt = raw_text[7:].strip() if len(raw_text) > 7 else ''
+            if foods:
+                advice = generate_diet_advice(foods, tdee, user_prompt)
+                if advice:
+                    report_lines += f"\n\n--- AI Advice ---\n{advice}"
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=report_lines)]
                 )
             )
             return

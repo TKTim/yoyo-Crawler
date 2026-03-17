@@ -18,7 +18,7 @@ GIST_DIETARY_FILENAME = 'yoyo_dietary_logs.json'
 # Taiwan timezone (UTC+8)
 TW_TZ = timezone(timedelta(hours=8))
 
-# In-memory store: { "user_id": { "2026-03-17": { "foods": [...] } } }
+# In-memory store: { "user_id": { "tdee": 2000, "2026-03-17": { "foods": [...] } } }
 _dietary_logs = {}
 
 
@@ -127,6 +127,19 @@ def remove_food_entry(user_id, index):
     return removed
 
 
+def set_tdee(user_id, tdee):
+    """Set TDEE for a user and save to Gist."""
+    if user_id not in _dietary_logs:
+        _dietary_logs[user_id] = {}
+    _dietary_logs[user_id]['tdee'] = tdee
+    return save_dietary_logs()
+
+
+def get_tdee(user_id):
+    """Get TDEE for a user, or None if not set."""
+    return _dietary_logs.get(user_id, {}).get('tdee')
+
+
 def get_today_log(user_id):
     """Return today's food list for a user, or empty list."""
     today = _today_str()
@@ -149,9 +162,10 @@ def prune_old_entries():
     cutoff = (datetime.now(TW_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
     for user_id in list(_dietary_logs.keys()):
         dates = _dietary_logs[user_id]
-        old_dates = [d for d in dates if d < cutoff]
+        old_dates = [d for d in dates if d < cutoff and d != 'tdee']
         for d in old_dates:
             del dates[d]
-        # Remove user entirely if no dates left
-        if not dates:
+        # Remove user entirely if only empty or no keys remain (preserve tdee)
+        remaining = {k for k in dates if k != 'tdee'}
+        if not remaining and 'tdee' not in dates:
             del _dietary_logs[user_id]
