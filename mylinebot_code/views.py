@@ -24,8 +24,8 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageCo
 from .scraper import parse_forum
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, remove_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
-from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, generate_diet_advice
+from .dietary_storage import add_food_entry, add_food_entries, remove_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
+from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods, generate_diet_advice
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -139,7 +139,7 @@ def handle_text_message(event):
                 "▸ myid — 顯示你的 User/Group/Room ID",
                 "",
                 "飲食追蹤（不需授權）：",
-                "▸ add {食物} {描述} — 記錄食物攝取",
+                "▸ add {描述} — 記錄食物（支援多項）",
                 "▸ 直接傳食物照片 — AI 辨識並記錄",
                 "▸ remove {編號} — 刪除今日食物紀錄",
                 "▸ today — 顯示今日飲食紀錄",
@@ -190,40 +190,50 @@ def handle_text_message(event):
                 )
             return
 
-        # Command: add food (no auth required)
+        # Command: add food (no auth required) — natural language, supports multiple items
         if text.startswith('add '):
-            parts = raw_text.split(maxsplit=2)
-            if len(parts) < 2:
-                response = "Usage: add {food_name} {description}"
+            food_text = raw_text[4:].strip()
+            if not food_text:
+                response = "Usage: add {description of food}\nExample: add 早餐吃了一顆蛋和一杯豆漿"
             else:
-                food_name = parts[1]
-                description = parts[2] if len(parts) > 2 else ''
+                foods_list = parse_and_estimate_foods(food_text)
 
-                nutrition = estimate_nutrition(food_name, description)
-
-                food_entry = {
-                    'name': food_name,
-                    'description': description,
-                    **nutrition,
-                }
-
-                saved = add_food_entry(user_id, food_entry)
-
-                if nutrition['calories'] is not None:
-                    response = (
-                        f"Added: {food_name}\n"
-                        f"{nutrition['calories']:.0f} kcal, "
-                        f"{nutrition['protein']:.1f}g P, "
-                        f"{nutrition['carbs']:.1f}g C, "
-                        f"{nutrition['fat']:.1f}g F"
-                    )
-                    if nutrition.get('basis'):
-                        response += f"\n({nutrition['basis']})"
+                if not foods_list:
+                    response = "Could not parse food items. Please try again."
                 else:
-                    response = f"Added: {food_name} (nutrition estimation unavailable)"
+                    saved = add_food_entries(user_id, foods_list)
 
-                if not saved:
-                    response += "\n(Warning: failed to save to storage)"
+                    if len(foods_list) == 1:
+                        f = foods_list[0]
+                        desc = f.get('description', '')
+                        name_str = f"{f['name']} ({desc})" if desc else f['name']
+                        response = (
+                            f"Added: {name_str}\n"
+                            f"{f['calories']:.0f} kcal, "
+                            f"{f['protein']:.1f}g P, "
+                            f"{f['carbs']:.1f}g C, "
+                            f"{f['fat']:.1f}g F"
+                        )
+                        if f.get('basis'):
+                            response += f"\n({f['basis']})"
+                    else:
+                        lines = [f"Added {len(foods_list)} items:"]
+                        for i, f in enumerate(foods_list, 1):
+                            desc = f.get('description', '')
+                            name_str = f"{f['name']} ({desc})" if desc else f['name']
+                            lines.append(
+                                f"{i}. {name_str} — "
+                                f"{f['calories']:.0f} kcal, "
+                                f"{f['protein']:.1f}g P, "
+                                f"{f['carbs']:.1f}g C, "
+                                f"{f['fat']:.1f}g F"
+                            )
+                            if f.get('basis'):
+                                lines.append(f"   ({f['basis']})")
+                        response = "\n".join(lines)
+
+                    if not saved:
+                        response += "\n(Warning: failed to save to storage)"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(

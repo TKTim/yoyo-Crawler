@@ -158,6 +158,58 @@ def estimate_nutrition_from_image(image_bytes, mime_type):
         return {'food_name': None, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
 
+def parse_and_estimate_foods(text):
+    """
+    Parse free-form text describing one or more foods and estimate nutrition for each.
+    Returns a list of dicts, each with keys: name, calories, protein, carbs, fat, basis.
+    Returns None on failure.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not set, cannot parse foods")
+        return None
+
+    prompt = (
+        f"The user described what they ate: \"{text}\".\n"
+        "Identify the food items and estimate nutritional content for each.\n"
+        "IMPORTANT splitting rules:\n"
+        "- If the user describes ONE composite dish (e.g. 便當, 套餐, a sandwich with toppings), "
+        "keep it as ONE item. Use the dish name as \"name\" and put ingredients/details in \"description\".\n"
+        "  Example: \"鮪魚蔬菜便當\" → name: \"便當\", description: \"鮪魚、蔬菜\"\n"
+        "- Only split into multiple items when the user clearly lists SEPARATE dishes/foods "
+        "(e.g. \"一顆蛋和一杯豆漿\" → 2 items).\n"
+        "Return ONLY a JSON array (even for a single item) with objects containing these fields:\n"
+        '[{"name": "<main food name>", "description": "<ingredients or details, or empty string>", '
+        '"calories": <number>, "protein": <number>, "carbs": <number>, "fat": <number>, "basis": "<brief explanation>"}]\n'
+        "Values should be in kcal for calories and grams for protein/carbs/fat.\n"
+        '"name" should be concise (the primary dish/food name).\n'
+        '"description" should contain composition details if relevant, or empty string if not needed.\n'
+        '"basis" should be a short explanation (under 80 chars) of what you assumed (e.g. "1顆煎蛋~46g").\n'
+        "If a quantity is mentioned, use it. Otherwise assume a typical single serving.\n"
+        "If you cannot estimate, use 0 for all values."
+    )
+
+    try:
+        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
+        result = _parse_gemini_json(data)
+        if isinstance(result, dict):
+            result = [result]
+        foods = []
+        for item in result:
+            foods.append({
+                'name': item.get('name', ''),
+                'description': item.get('description', ''),
+                'calories': float(item.get('calories', 0)),
+                'protein': float(item.get('protein', 0)),
+                'carbs': float(item.get('carbs', 0)),
+                'fat': float(item.get('fat', 0)),
+                'basis': item.get('basis', ''),
+            })
+        return foods if foods else None
+    except Exception as e:
+        logger.error(f"Gemini API error for parse_and_estimate_foods: {e}")
+        return None
+
+
 def generate_diet_advice(foods, tdee=None, user_prompt=''):
     """
     Ask Gemini for dietary advice based on today's food log.

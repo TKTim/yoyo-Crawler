@@ -56,6 +56,36 @@ def add_food_entry(user_id, food_entry):
     return True
 
 
+def add_food_entries(user_id, food_entries):
+    """
+    Batch-insert multiple food entries to today's log, then sync to Gist once.
+    food_entries: list of dicts with keys name, calories, protein, carbs, fat, basis
+    Returns True on success.
+    """
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    today = _today_date()
+    objects = [
+        FoodEntry(
+            user_id=user_id,
+            date=today,
+            name=entry.get('name', ''),
+            description=entry.get('description', ''),
+            calories=entry.get('calories'),
+            protein=entry.get('protein'),
+            carbs=entry.get('carbs'),
+            fat=entry.get('fat'),
+            basis=entry.get('basis', ''),
+        )
+        for entry in food_entries
+    ]
+    FoodEntry.objects.bulk_create(objects)
+
+    save_dietary_to_gist()
+    return True
+
+
 def remove_food_entry(user_id, index):
     """
     Remove a food entry by 1-based index from today's log.
