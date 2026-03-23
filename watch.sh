@@ -23,11 +23,16 @@ echo ""
 LAST_RESTART=0
 
 inotifywait -m -r \
-    --include '.*\.(py|html|txt|json)$' \
-    --exclude '(\.git|venv|__pycache__|staticfiles|db\.sqlite3)' \
+    --exclude '(\.git|venv|__pycache__|staticfiles|node_modules|db\.sqlite3)' \
     -e modify,create,delete \
     "$WATCH_DIR" |
 while read -r directory event filename; do
+    # Only react to relevant file types
+    case "$filename" in
+        *.py|*.html|*.txt|*.json) ;;
+        *) continue ;;
+    esac
+
     NOW=$(date +%s)
     DIFF=$((NOW - LAST_RESTART))
 
