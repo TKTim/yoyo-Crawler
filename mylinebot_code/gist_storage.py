@@ -27,7 +27,7 @@ def save_articles_to_gist():
 
     from .models import ParsedArticle
 
-    articles = list(ParsedArticle.objects.all().values('title', 'url', 'post_date'))
+    articles = list(ParsedArticle.objects.all().values('title', 'url', 'post_date', 'author'))
 
     # Convert dates to strings for JSON
     for article in articles:
@@ -100,6 +100,7 @@ def load_articles_from_gist():
                 defaults={
                     'title': article['title'],
                     'post_date': post_date,
+                    'author': article.get('author', ''),
                 }
             )
             if created:

@@ -6,6 +6,7 @@ class ParsedArticle(models.Model):
     title = models.CharField(max_length=500)
     url = models.URLField(unique=True)
     post_date = models.DateField()
+    author = models.CharField(max_length=200, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

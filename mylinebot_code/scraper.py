@@ -81,11 +81,15 @@ def parse_forum():
             logger.info(f"SKIPPED (exists) | Date: {post_date} | URL: {url}")
             continue
 
+        # Extract author from title
+        author = extract_author_from_title(title)
+
         # Save new article
         article = ParsedArticle.objects.create(
             title=title,
             url=url,
-            post_date=post_date
+            post_date=post_date,
+            author=author,
         )
         new_articles.append(article)
         logger.info(f"NEW ARTICLE | Date: {post_date} | Title: {title} | URL: {url}")
@@ -149,6 +153,45 @@ def parse_date_from_title(title):
         return date(year, month, day)
     except ValueError:
         return None
+
+
+def extract_author_from_title(title):
+    """
+    Extract author/host name from the end of a title.
+    Formats: "(Host: Name)", "(host: Name)", "(Name)", "(Host:Name)"
+    Returns the name string or '' if not found.
+    """
+    match = re.search(r'\(\s*[Hh]ost\s*:\s*(.+?)\s*\)\s*$', title)
+    if match:
+        return match.group(1).strip()
+    # Fallback: name in parentheses at end without "Host:" prefix
+    # but only if it doesn't look like a weekday abbreviation
+    match = re.search(r'\(([^)]+)\)\s*$', title)
+    if match:
+        name = match.group(1).strip()
+        # Skip if it looks like a day-of-week pattern (e.g., "Tue.", "Sat")
+        if not re.match(r'^[A-Za-z]{3}\.?$', name):
+            return name
+    return ''
+
+
+def extract_topic_from_title(title):
+    """
+    Extract the topic name from a title, stripping the date prefix and author suffix.
+    Input:  "3/17 (Tue) What the archaeologists of the future will discover about us (Host: Winston)"
+    Output: "What the archaeologists of the future will discover about us"
+    """
+    # Remove date prefix: "3/17 (Tue.) " or "03/17(Sat)" etc.
+    topic = re.sub(r'^\d{1,2}/\d{1,2}\s*\([A-Za-z]+\.?\s*\)\s*', '', title)
+    # Remove author suffix: "(Host: Name)" or "(Name)"
+    topic = re.sub(r'\s*\(\s*[Hh]ost\s*:\s*[^)]+\)\s*$', '', topic)
+    topic = re.sub(r'\s*\([^)]+\)\s*$', '', topic)
+    return topic.strip()
+
+
+def get_weekday_name(d):
+    """Return full weekday name for a date."""
+    return d.strftime('%A')
 
 
 def clean_url(url):

@@ -21,7 +21,7 @@ from linebot.v3.messaging import (
 from linebot.v3.messaging.api import MessagingApiBlob
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 
-from .scraper import parse_forum
+from .scraper import parse_forum, extract_topic_from_title, get_weekday_name
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
 from .dietary_storage import add_food_entry, add_food_entries, remove_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
@@ -34,6 +34,46 @@ handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 def get_push_targets():
     """Get push notification targets from PushTarget table."""
     return list(PushTarget.objects.values_list('target_id', flat=True))
+
+
+def format_weekly_message(articles, header="YOYO WEEKLY UPDATE"):
+    """
+    Format articles into the styled weekly update message.
+
+    Example output:
+        ••• YOYO WEEKLY UPDATE •••
+
+        📅 Tuesday (3/17)
+        📝 What will future archaeologists discover about us?
+        👤 Host: Winston
+        🔗 https://yoyo.club.tw/viewtopic.php?t=5462
+
+        ────────────────────────────
+
+        📅 Saturday (3/21)
+        📝 Move It and Level Up Your Brain!
+        👤 Host: Tim Lee
+        🔗 https://yoyo.club.tw/viewtopic.php?t=5458
+    """
+    separator = "\n\n────────────────────────────\n\n"
+    blocks = []
+
+    for article in articles:
+        topic = extract_topic_from_title(article.title)
+        weekday = get_weekday_name(article.post_date)
+        date_str = article.post_date.strftime('%-m/%-d')
+
+        lines = [
+            f"📅 {weekday} ({date_str})",
+            f"📝 {topic}",
+        ]
+        if article.author:
+            lines.append(f"👤 Host: {article.author}")
+        lines.append(f"🔗 {article.url}")
+
+        blocks.append("\n".join(lines))
+
+    return f"••• {header} •••\n\n" + separator.join(blocks)
 
 
 def get_current_week_range():
@@ -398,10 +438,7 @@ def handle_text_message(event):
             ).order_by('post_date')
 
             if week_articles:
-                response_lines = [f"本週文章 ({monday.strftime('%m/%d')} - {sunday.strftime('%m/%d')}):"]
-                for article in week_articles:
-                    response_lines.append(f"[{article.title}]: {article.url}")
-                response = "\n\n".join(response_lines)
+                response = format_weekly_message(week_articles)
             else:
                 response = "本週沒有新文章"
 
@@ -680,10 +717,8 @@ def cron_scraper(request, secret):
 
     if new_this_week:
         # Build message (same format as articles command)
-        response_lines = [f"本週新文章 ({monday.strftime('%m/%d')} - {sunday.strftime('%m/%d')}):"]
-        for article in sorted(new_this_week, key=lambda x: x.post_date):
-            response_lines.append(f"[{article.title}]: {article.url}")
-        message = "\n\n".join(response_lines)
+        sorted_articles = sorted(new_this_week, key=lambda x: x.post_date)
+        message = format_weekly_message(sorted_articles)
 
         # Push to all targets (users and groups)
         with ApiClient(configuration) as api_client:
