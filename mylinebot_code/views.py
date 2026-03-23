@@ -65,7 +65,7 @@ def format_weekly_message(articles, header="YOYO WEEKLY UPDATE"):
 
         lines = [
             f"📅 {weekday} ({date_str})",
-            f"📝 {topic}",
+            f"📝 Topic: {topic}",
         ]
         if article.author:
             lines.append(f"👤 Host: {article.author}")
