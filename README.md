@@ -341,3 +341,8 @@ Add or remove a push target.
 - Add: `created: <target_id>` or `already exists: <target_id>`
 - Remove: `removed: <target_id>` or `not found: <target_id>`
 - Missing params: `400 Bad request: need action (add/remove) and target_id`
+
+#### ssh to aws
+```
+ssh -i LightsailDefaultKey-ap-northeast-1.pem ubuntu@52.199.42.223
+```
