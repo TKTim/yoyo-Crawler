@@ -210,6 +210,55 @@ def parse_and_estimate_foods(text):
         return None
 
 
+def modify_food_estimation(original_food, modification):
+    """
+    Re-estimate nutrition for an existing food entry based on user's modification.
+    original_food: dict with keys name, description, calories, protein, carbs, fat, basis
+    modification: user's modification text (e.g. "其實只有半碗", "加了一顆蛋", "飯量比較少")
+    Returns dict with keys: name, description, calories, protein, carbs, fat, basis.
+    Returns None on failure.
+    """
+    if not GEMINI_API_KEY:
+        return None
+
+    desc = original_food.get('description', '')
+    original_desc = f"{original_food['name']} ({desc})" if desc else original_food['name']
+
+    prompt = (
+        f"Original food entry: \"{original_desc}\"\n"
+        f"Original nutrition: {original_food.get('calories', 0):.0f} kcal, "
+        f"{original_food.get('protein', 0):.1f}g protein, "
+        f"{original_food.get('carbs', 0):.1f}g carbs, "
+        f"{original_food.get('fat', 0):.1f}g fat\n"
+        f"Original basis: \"{original_food.get('basis', '')}\"\n\n"
+        f"User wants to modify: \"{modification}\"\n\n"
+        "Based on the modification, re-estimate the food entry.\n"
+        "The modification may change the food name, portion size, ingredients, or other details.\n"
+        "Return ONLY a JSON object with these fields (no markdown, no extra text):\n"
+        '{"name": "<updated food name>", "description": "<updated details>", '
+        '"calories": <number>, "protein": <number>, "carbs": <number>, "fat": <number>, '
+        '"basis": "<brief explanation of what changed>"}\n'
+        "Values should be in kcal for calories and grams for protein/carbs/fat.\n"
+        '"basis" should explain what was adjusted (under 80 chars).\n'
+    )
+
+    try:
+        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
+        result = _parse_gemini_json(data)
+        return {
+            'name': result.get('name', original_food['name']),
+            'description': result.get('description', ''),
+            'calories': float(result.get('calories', 0)),
+            'protein': float(result.get('protein', 0)),
+            'carbs': float(result.get('carbs', 0)),
+            'fat': float(result.get('fat', 0)),
+            'basis': result.get('basis', ''),
+        }
+    except Exception as e:
+        logger.error(f"Gemini API error for modify_food_estimation: {e}")
+        return None
+
+
 def generate_diet_advice(foods, tdee=None, user_prompt=''):
     """
     Ask Gemini for dietary advice based on today's food log.

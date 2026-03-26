@@ -108,6 +108,51 @@ def remove_food_entry(user_id, index):
     return removed
 
 
+def get_food_entry_by_index(user_id, index):
+    """
+    Get a food entry by 1-based index from today's log.
+    Returns the food dict on success, None if index is invalid.
+    """
+    from .models import FoodEntry
+
+    today = _today_date()
+    entries = list(FoodEntry.objects.filter(user_id=user_id, date=today).order_by('added_at'))
+
+    if not entries or index < 1 or index > len(entries):
+        return None
+
+    return _entry_to_dict(entries[index - 1])
+
+
+def update_food_entry(user_id, index, updated_food):
+    """
+    Update a food entry by 1-based index from today's log, then sync to Gist.
+    updated_food: dict with keys name, description, calories, protein, carbs, fat, basis
+    Returns True on success, False if index is invalid.
+    """
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    today = _today_date()
+    entries = list(FoodEntry.objects.filter(user_id=user_id, date=today).order_by('added_at'))
+
+    if not entries or index < 1 or index > len(entries):
+        return False
+
+    entry = entries[index - 1]
+    entry.name = updated_food.get('name', entry.name)
+    entry.description = updated_food.get('description', entry.description)
+    entry.calories = updated_food.get('calories', entry.calories)
+    entry.protein = updated_food.get('protein', entry.protein)
+    entry.carbs = updated_food.get('carbs', entry.carbs)
+    entry.fat = updated_food.get('fat', entry.fat)
+    entry.basis = updated_food.get('basis', entry.basis)
+    entry.save()
+
+    save_dietary_to_gist()
+    return True
+
+
 def get_today_log(user_id):
     """Return today's food list for a user, or empty list."""
     from .models import FoodEntry

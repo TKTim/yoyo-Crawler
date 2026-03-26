@@ -24,8 +24,8 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageCo
 from .scraper import parse_forum, extract_topic_from_title, get_weekday_name
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, add_food_entries, remove_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
-from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods, generate_diet_advice
+from .dietary_storage import add_food_entry, add_food_entries, remove_food_entry, get_food_entry_by_index, update_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
+from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods, modify_food_estimation, generate_diet_advice
 
 # Initialize LINE Bot API
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -154,6 +154,7 @@ def handle_text_message(event):
     chinese_aliases = {
         '加': 'add',
         '刪除': 'remove',
+        '修改': 'modify',
         '今天': 'today',
         '報告': 'report',
         '歷史': 'history',
@@ -182,6 +183,7 @@ def handle_text_message(event):
                 "▸ add {描述} — 記錄食物（支援多項）",
                 "▸ 直接傳食物照片 — AI 辨識並記錄",
                 "▸ remove {編號} — 刪除今日食物紀錄",
+                "▸ modify {編號} {修改內容} — AI 重新估算",
                 "▸ today — 顯示今日飲食紀錄",
                 "▸ history — 過去 7 天飲食摘要",
                 "▸ set tdee {數字} — 設定每日熱量目標",
@@ -295,6 +297,45 @@ def handle_text_message(event):
                     response = f"Removed: {removed['name']}"
                 else:
                     response = f"Invalid index: {index}. Use 'today' to see the list."
+
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+            )
+            return
+
+        # Command: modify food by index (no auth required)
+        if text.startswith('modify '):
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 3 or not parts[1].isdigit():
+                response = "Usage: modify {編號} {修改內容}\nExample: modify 1 其實只有半碗"
+            else:
+                index = int(parts[1])
+                modification = parts[2].strip()
+                original = get_food_entry_by_index(user_id, index)
+                if not original:
+                    response = f"Invalid index: {index}. Use 'today' to see the list."
+                else:
+                    updated = modify_food_estimation(original, modification)
+                    if not updated:
+                        response = "AI failed to re-estimate. Please try again."
+                    else:
+                        saved = update_food_entry(user_id, index, updated)
+                        desc = updated.get('description', '')
+                        name_str = f"{updated['name']} ({desc})" if desc else updated['name']
+                        response = (
+                            f"Modified #{index}: {name_str}\n"
+                            f"{updated['calories']:.0f} kcal, "
+                            f"{updated['protein']:.1f}g P, "
+                            f"{updated['carbs']:.1f}g C, "
+                            f"{updated['fat']:.1f}g F"
+                        )
+                        if updated.get('basis'):
+                            response += f"\n({updated['basis']})"
+                        if not saved:
+                            response += "\n(Warning: failed to save to storage)"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
