@@ -240,6 +240,95 @@ def get_tdee(user_id):
     return obj.tdee if obj else None
 
 
+def _entry_to_dict_with_id(entry):
+    """Convert a FoodEntry to dict including the Django PK (for LIFF editor)."""
+    d = _entry_to_dict(entry)
+    d['id'] = entry.id
+    return d
+
+
+def get_entries_with_ids(user_id, days=7):
+    """Return {date_str: [entry dicts with id]} for the last N days, newest first."""
+    from .models import FoodEntry
+
+    cutoff = _today_date() - timedelta(days=days)
+    entries = FoodEntry.objects.filter(
+        user_id=user_id, date__gte=cutoff,
+    ).order_by('-date', 'added_at')
+
+    result = defaultdict(list)
+    for entry in entries:
+        result[entry.date.isoformat()].append(_entry_to_dict_with_id(entry))
+
+    return dict(sorted(result.items(), reverse=True))
+
+
+def update_entry_by_id(entry_id, user_id, updated_fields):
+    """
+    Update a FoodEntry by its primary key. Verifies user_id ownership.
+    Returns the updated dict, or None if not found / wrong user.
+    """
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    entry = FoodEntry.objects.filter(id=entry_id, user_id=user_id).first()
+    if not entry:
+        return None
+
+    for field in ('name', 'description', 'calories', 'protein', 'carbs', 'fat', 'basis'):
+        if field in updated_fields:
+            setattr(entry, field, updated_fields[field])
+    entry.save()
+
+    save_dietary_to_gist()
+    return _entry_to_dict_with_id(entry)
+
+
+def delete_entry_by_id(entry_id, user_id):
+    """
+    Delete a FoodEntry by its primary key. Verifies user_id ownership.
+    Returns the removed dict, or None if not found / wrong user.
+    """
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    entry = FoodEntry.objects.filter(id=entry_id, user_id=user_id).first()
+    if not entry:
+        return None
+
+    removed = _entry_to_dict_with_id(entry)
+    entry.delete()
+
+    save_dietary_to_gist()
+    return removed
+
+
+def add_entry_for_date(user_id, date_str, food_entry):
+    """
+    Add a food entry for a specific date (not just today).
+    date_str: ISO format date string (e.g. '2026-03-25')
+    Returns the created entry dict with id.
+    """
+    from datetime import date as date_type
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    entry = FoodEntry.objects.create(
+        user_id=user_id,
+        date=date_type.fromisoformat(date_str),
+        name=food_entry.get('name', ''),
+        description=food_entry.get('description', ''),
+        calories=food_entry.get('calories'),
+        protein=food_entry.get('protein'),
+        carbs=food_entry.get('carbs'),
+        fat=food_entry.get('fat'),
+        basis=food_entry.get('basis', ''),
+    )
+
+    save_dietary_to_gist()
+    return _entry_to_dict_with_id(entry)
+
+
 def prune_old_entries():
     """Remove entries older than 7 days."""
     from .models import FoodEntry

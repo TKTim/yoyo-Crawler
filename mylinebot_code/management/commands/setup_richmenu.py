@@ -12,6 +12,8 @@ import io
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from django.conf import settings
+
 from linebot.v3.messaging import (
     Configuration,
     ApiClient,
@@ -22,6 +24,7 @@ from linebot.v3.messaging import (
     RichMenuBounds,
     RichMenuSize,
     MessageAction,
+    URIAction,
 )
 
 
@@ -34,6 +37,7 @@ CELL_W = MENU_WIDTH // COLS
 CELL_H = MENU_HEIGHT // ROWS
 
 # Button definitions: (label, action_text, color)
+# action_text starting with 'https://' will use URIAction instead of MessageAction
 BUTTONS = [
     # Row 1
     ('記錄飲食', 'add ', '#4CAF50'),
@@ -41,7 +45,7 @@ BUTTONS = [
     ('飲食報告', 'report', '#FF9800'),
     # Row 2
     ('刪除紀錄', 'remove', '#F44336'),
-    ('歷史紀錄', 'history', '#9C27B0'),
+    ('編輯紀錄', '__liff__', '#9C27B0'),
     ('指令說明', 'help', '#607D8B'),
 ]
 
@@ -132,6 +136,7 @@ def _generate_menu_image():
 
 def _build_rich_menu_areas():
     """Build area definitions mapping each button region to its action."""
+    liff_id = settings.LIFF_ID
     areas = []
     for i, (label, action_text, _) in enumerate(BUTTONS):
         col = i % COLS
@@ -144,8 +149,10 @@ def _build_rich_menu_areas():
             height=CELL_H,
         )
 
-        # "add " has a trailing space — opens input for the user to type food
-        action = MessageAction(label=label, text=action_text)
+        if action_text == '__liff__':
+            action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}')
+        else:
+            action = MessageAction(label=label, text=action_text)
         areas.append(RichMenuArea(bounds=bounds, action=action))
 
     return areas

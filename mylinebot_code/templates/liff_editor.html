@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>飲食紀錄編輯器</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  padding-bottom: 80px;
+}
+.header {
+  background: #06c755;
+  color: #fff;
+  padding: 16px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.loading, .error-msg {
+  text-align: center;
+  padding: 40px 16px;
+  color: #888;
+}
+.error-msg { color: #d32f2f; }
+
+/* Date sections */
+.date-section {
+  margin: 12px;
+}
+.date-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  padding: 8px 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.date-total {
+  font-size: 12px;
+  color: #999;
+  font-weight: 400;
+}
+
+/* Entry card */
+.entry-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.entry-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.entry-desc {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 6px;
+}
+.entry-macros {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+  flex-wrap: wrap;
+}
+.macro { background: #f0f0f0; padding: 2px 8px; border-radius: 12px; }
+.macro-cal { background: #fff3e0; color: #e65100; font-weight: 600; }
+.entry-basis {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 4px;
+}
+.entry-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.btn {
+  border: none;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-edit { background: #e3f2fd; color: #1565c0; }
+.btn-delete { background: #ffebee; color: #c62828; }
+.btn-save { background: #06c755; color: #fff; }
+.btn-cancel { background: #eee; color: #666; }
+.btn-add {
+  background: #06c755;
+  color: #fff;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+/* Edit form */
+.edit-form { display: none; }
+.edit-form.active { display: block; }
+.edit-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.edit-row label {
+  font-size: 13px;
+  color: #666;
+  min-width: 50px;
+}
+.edit-row input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.edit-row input[type="number"] {
+  width: 80px;
+  flex: none;
+}
+
+/* Add form */
+.add-form {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  display: none;
+}
+.add-form.active { display: block; }
+
+/* Modal overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  justify-content: center;
+  align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  margin: 20px;
+  max-width: 320px;
+  text-align: center;
+}
+.modal h3 { margin-bottom: 8px; }
+.modal p { color: #666; font-size: 14px; margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 12px; justify-content: center; }
+.modal-actions .btn { padding: 10px 24px; font-size: 15px; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="header">飲食紀錄編輯器</div>
+<div id="loading" class="loading">載入中...</div>
+<div id="error" class="error-msg" style="display:none;"></div>
+<div id="content" style="display:none;"></div>
+
+<div id="deleteModal" class="modal-overlay">
+  <div class="modal">
+    <h3>確認刪除</h3>
+    <p id="deleteModalText"></p>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeDeleteModal()">取消</button>
+      <button class="btn btn-delete" onclick="confirmDelete()">刪除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const LIFF_ID = '{{ liff_id }}';
+let ACCESS_TOKEN = '';
+let ENTRIES_DATA = {};
+
+// ── LIFF Init ─────────────────────────────────────────────────────────────────
+async function initLiff() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    ACCESS_TOKEN = liff.getAccessToken();
+    await loadEntries();
+  } catch (e) {
+    showError('LIFF 初始化失敗: ' + e.message);
+  }
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Authorization': 'Bearer ' + ACCESS_TOKEN,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'API error');
+  return data;
+}
+
+// ── Load entries ──────────────────────────────────────────────────────────────
+async function loadEntries() {
+  try {
+    const res = await apiFetch('/liff/api/entries/');
+    ENTRIES_DATA = res.data;
+    renderEntries();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  } catch (e) {
+    showError('載入失敗: ' + e.message);
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderEntries() {
+  const content = document.getElementById('content');
+  const dates = Object.keys(ENTRIES_DATA).sort().reverse();
+
+  if (dates.length === 0) {
+    content.innerHTML = '<div class="loading">還沒有飲食紀錄</div>';
+    return;
+  }
+
+  const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+  let html = '';
+
+  for (const dateStr of dates) {
+    const entries = ENTRIES_DATA[dateStr];
+    const display = formatDate(dateStr, today);
+    const totalCal = entries.reduce((s, e) => s + (e.calories || 0), 0);
+
+    html += '<div class="date-section">';
+    html += `<div class="date-header">
+      <span>${display}</span>
+      <span class="date-total">${totalCal.toFixed(0)} kcal</span>
+    </div>`;
+
+    for (const entry of entries) {
+      html += renderCard(entry, dateStr);
+    }
+
+    html += renderAddButton(dateStr);
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function formatDate(dateStr, today) {
+  if (dateStr === today) return dateStr.slice(5).replace('-', '/') + ' (今天)';
+  const d = new Date(dateStr);
+  const days = ['日', '一', '二', '三', '四', '五', '六'];
+  return dateStr.slice(5).replace('-', '/') + ' (' + days[d.getDay()] + ')';
+}
+
+function renderCard(entry, dateStr) {
+  const desc = entry.description ? `<div class="entry-desc">${esc(entry.description)}</div>` : '';
+  const basis = entry.basis ? `<div class="entry-basis">${esc(entry.basis)}</div>` : '';
+
+  return `
+  <div class="entry-card" id="card-${entry.id}">
+    <div class="entry-view">
+      <div class="entry-name">${esc(entry.name)}</div>
+      ${desc}
+      <div class="entry-macros">
+        <span class="macro macro-cal">${fmt(entry.calories)} kcal</span>
+        <span class="macro">P ${fmt(entry.protein)}g</span>
+        <span class="macro">C ${fmt(entry.carbs)}g</span>
+        <span class="macro">F ${fmt(entry.fat)}g</span>
+      </div>
+      ${basis}
+      <div class="entry-actions">
+        <button class="btn btn-edit" onclick="startEdit(${entry.id})">編輯</button>
+        <button class="btn btn-delete" onclick="askDelete(${entry.id}, '${esc(entry.name)}')">刪除</button>
+      </div>
+    </div>
+    <div class="edit-form" id="edit-${entry.id}">
+      <div class="edit-row"><label>名稱</label><input id="ed-name-${entry.id}" value="${esc(entry.name)}"></div>
+      <div class="edit-row"><label>描述</label><input id="ed-desc-${entry.id}" value="${esc(entry.description || '')}"></div>
+      <div class="edit-row">
+        <label>熱量</label><input type="number" step="0.1" id="ed-cal-${entry.id}" value="${entry.calories || ''}">
+        <label>蛋白</label><input type="number" step="0.1" id="ed-pro-${entry.id}" value="${entry.protein || ''}">
+      </div>
+      <div class="edit-row">
+        <label>碳水</label><input type="number" step="0.1" id="ed-carb-${entry.id}" value="${entry.carbs || ''}">
+        <label>脂肪</label><input type="number" step="0.1" id="ed-fat-${entry.id}" value="${entry.fat || ''}">
+      </div>
+      <div class="entry-actions">
+        <button class="btn btn-cancel" onclick="cancelEdit(${entry.id})">取消</button>
+        <button class="btn btn-save" onclick="saveEdit(${entry.id})">儲存</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderAddButton(dateStr) {
+  const formId = 'add-' + dateStr;
+  return `
+  <button class="btn-add" onclick="toggleAddForm('${formId}')">+ 新增</button>
+  <div class="add-form" id="${formId}">
+    <div class="edit-row"><label>名稱</label><input id="${formId}-name"></div>
+    <div class="edit-row"><label>描述</label><input id="${formId}-desc"></div>
+    <div class="edit-row">
+      <label>熱量</label><input type="number" step="0.1" id="${formId}-cal">
+      <label>蛋白</label><input type="number" step="0.1" id="${formId}-pro">
+    </div>
+    <div class="edit-row">
+      <label>碳水</label><input type="number" step="0.1" id="${formId}-carb">
+      <label>脂肪</label><input type="number" step="0.1" id="${formId}-fat">
+    </div>
+    <div class="entry-actions">
+      <button class="btn btn-cancel" onclick="toggleAddForm('${formId}')">取消</button>
+      <button class="btn btn-save" onclick="submitAdd('${formId}', '${dateStr}')">新增</button>
+    </div>
+  </div>`;
+}
+
+// ── Edit actions ──────────────────────────────────────────────────────────────
+function startEdit(id) {
+  document.querySelector(`#card-${id} .entry-view`).style.display = 'none';
+  document.getElementById(`edit-${id}`).classList.add('active');
+}
+
+function cancelEdit(id) {
+  document.querySelector(`#card-${id} .entry-view`).style.display = '';
+  document.getElementById(`edit-${id}`).classList.remove('active');
+}
+
+async function saveEdit(id) {
+  const body = {
+    name: document.getElementById(`ed-name-${id}`).value,
+    description: document.getElementById(`ed-desc-${id}`).value,
+    calories: parseNum(`ed-cal-${id}`),
+    protein: parseNum(`ed-pro-${id}`),
+    carbs: parseNum(`ed-carb-${id}`),
+    fat: parseNum(`ed-fat-${id}`),
+  };
+
+  try {
+    await apiFetch(`/liff/api/entries/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    showToast('已更新');
+    await loadEntries();
+  } catch (e) {
+    showToast('更新失敗: ' + e.message);
+  }
+}
+
+// ── Delete actions ────────────────────────────────────────────────────────────
+let pendingDeleteId = null;
+
+function askDelete(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('deleteModalText').textContent = `確定要刪除「${name}」嗎？`;
+  document.getElementById('deleteModal').classList.add('active');
+}
+
+function closeDeleteModal() {
+  pendingDeleteId = null;
+  document.getElementById('deleteModal').classList.remove('active');
+}
+
+async function confirmDelete() {
+  if (!pendingDeleteId) return;
+  const id = pendingDeleteId;
+  closeDeleteModal();
+
+  try {
+    await apiFetch(`/liff/api/entries/${id}/`, { method: 'DELETE' });
+    showToast('已刪除');
+    await loadEntries();
+  } catch (e) {
+    showToast('刪除失敗: ' + e.message);
+  }
+}
+
+// ── Add actions ───────────────────────────────────────────────────────────────
+function toggleAddForm(formId) {
+  document.getElementById(formId).classList.toggle('active');
+}
+
+async function submitAdd(formId, dateStr) {
+  const name = document.getElementById(`${formId}-name`).value.trim();
+  if (!name) { showToast('請輸入名稱'); return; }
+
+  const body = {
+    date: dateStr,
+    name: name,
+    description: document.getElementById(`${formId}-desc`).value,
+    calories: parseNum(`${formId}-cal`),
+    protein: parseNum(`${formId}-pro`),
+    carbs: parseNum(`${formId}-carb`),
+    fat: parseNum(`${formId}-fat`),
+  };
+
+  try {
+    await apiFetch('/liff/api/entries/', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    showToast('已新增');
+    await loadEntries();
+  } catch (e) {
+    showToast('新增失敗: ' + e.message);
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function fmt(n) {
+  return n != null ? Number(n).toFixed(1) : '—';
+}
+
+function parseNum(inputId) {
+  const v = document.getElementById(inputId).value;
+  return v === '' ? null : parseFloat(v);
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+initLiff();
+</script>
+</body>
+</html>

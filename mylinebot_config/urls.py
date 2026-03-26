@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
-from mylinebot_code import views
+from mylinebot_code import views, liff_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,4 +29,9 @@ urlpatterns = [
     path('users/<str:secret>/', views.api_users, name='api_users'),
     path('targets/<str:secret>/', views.api_targets, name='api_targets'),
     path('dietary-report/<str:secret>/', views.dietary_report_cron, name='dietary_report_cron'),
+
+    # LIFF web editor
+    path('liff/editor/', liff_views.liff_editor, name='liff_editor'),
+    path('liff/api/entries/', liff_views.api_entries, name='liff_api_entries'),
+    path('liff/api/entries/<int:entry_id>/', liff_views.api_entry_detail, name='liff_api_entry_detail'),
 ]
