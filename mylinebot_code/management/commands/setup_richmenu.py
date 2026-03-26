@@ -171,8 +171,8 @@ class Command(BaseCommand):
             image_buf = _generate_menu_image()
             blob_api.set_rich_menu_image(
                 rich_menu_id=menu_id,
-                body=image_buf.read(),
-                _content_type='image/png',
+                body=bytearray(image_buf.read()),
+                _headers={'Content-Type': 'image/png'},
             )
             self.stdout.write('Image uploaded')
 
