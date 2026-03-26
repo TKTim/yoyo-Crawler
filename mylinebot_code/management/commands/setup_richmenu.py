@@ -55,25 +55,50 @@ def _generate_menu_image():
 
     # Try to load a font that supports CJK
     font = None
+    font_size = 48
     font_paths = [
         # macOS
         '/System/Library/Fonts/PingFang.ttc',
         '/System/Library/Fonts/STHeiti Medium.ttc',
         '/System/Library/Fonts/Hiragino Sans GB.ttc',
-        # Linux
-        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+        # Ubuntu/Debian — fonts-noto-cjk package
         '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
         '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+        # Ubuntu — fonts-noto-cjk-extra or alternate paths
+        '/usr/share/fonts/opentype/noto/NotoSansTC-Regular.otf',
+        '/usr/share/fonts/truetype/noto/NotoSansTC-Regular.ttf',
+        # Ubuntu — WenQuanYi (fonts-wqy-zenhei)
+        '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+        # Ubuntu — Droid (fonts-droid-fallback)
+        '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
     ]
     for fp in font_paths:
         try:
-            font = ImageFont.truetype(fp, 48)
+            font = ImageFont.truetype(fp, font_size)
             break
         except (OSError, IOError):
             continue
 
     if font is None:
-        font = ImageFont.load_default()
+        # Use glob to find any CJK font on the system
+        import glob
+        for pattern in ['**/NotoSans*CJK*.ttc', '**/NotoSans*TC*.otf', '**/wqy*.ttc', '**/Droid*Fallback*.ttf']:
+            matches = glob.glob(f'/usr/share/fonts/{pattern}', recursive=True)
+            if matches:
+                try:
+                    font = ImageFont.truetype(matches[0], font_size)
+                    break
+                except (OSError, IOError):
+                    continue
+
+    if font is None:
+        raise RuntimeError(
+            "No CJK font found. Install one with:\n"
+            "  sudo apt install fonts-noto-cjk\n"
+            "or:\n"
+            "  sudo apt install fonts-wqy-zenhei"
+        )
 
     for i, (label, _, color) in enumerate(BUTTONS):
         col = i % COLS
