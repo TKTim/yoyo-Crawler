@@ -1,5 +1,6 @@
 import logging
 from datetime import date, timedelta
+from enum import Enum
 
 from django.conf import settings
 
@@ -28,16 +29,75 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageCo
 from .scraper import parse_forum, extract_topic_from_title, get_weekday_name
 from .models import ParsedArticle, AuthorizedUser, PushTarget
 from .gist_storage import save_users_to_gist, save_targets_to_gist
-from .dietary_storage import add_food_entry, add_food_entries, remove_food_entry, get_food_entry_by_index, update_food_entry, get_today_log, get_history, get_all_users_today, set_tdee, get_tdee
-from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods, modify_food_estimation, generate_diet_advice
+from .dietary_storage import (
+    add_food_entry, add_food_entries, remove_food_entry, remove_food_entries,
+    get_food_entry_by_index, update_food_entry, get_today_log, get_history,
+    get_all_users_today, set_tdee, get_tdee,
+)
+from .gemini_api import (
+    estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
+    modify_food_estimation, generate_diet_advice,
+)
 
-# Initialize LINE Bot API
+
+# ── Command constants ──────────────────────────────────────────────────────────
+
+class Cmd(str, Enum):
+    """All bot command keywords as constants."""
+    ADD = 'add'
+    REMOVE = 'remove'
+    MODIFY = 'modify'
+    TODAY = 'today'
+    HISTORY = 'history'
+    REPORT = 'report'
+    HELP = 'help'
+    MYID = 'myid'
+    DB = 'db'
+    CLEAR = 'clear'
+    ARTICLES = 'articles'
+    SET_TDEE = 'set tdee'
+    ADDUSER = 'adduser'
+    REMOVEUSER = 'removeuser'
+    LISTUSERS = 'listusers'
+    ADDTARGET = 'addtarget'
+    REMOVETARGET = 'removetarget'
+    LISTTARGETS = 'listtargets'
+
+
+# Chinese aliases → Cmd member
+CHINESE_ALIASES = {
+    '加': Cmd.ADD,
+    '刪除': Cmd.REMOVE,
+    '修改': Cmd.MODIFY,
+    '今天': Cmd.TODAY,
+    '報告': Cmd.REPORT,
+    '歷史': Cmd.HISTORY,
+}
+
+# Derived from the enum — used to detect non-command text in pending states
+_KNOWN_COMMANDS = tuple(cmd.value for cmd in Cmd)
+
+
+# ── LINE Bot setup ─────────────────────────────────────────────────────────────
+
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 
 # Track users waiting to input food text (user_id -> True)
-# When user sends bare "add", we set this flag so the next plain text is treated as food.
 _pending_add = {}
+
+# Track users waiting to input remove indices (user_id -> True)
+_pending_remove = {}
+
+
+def _reply(api, token, text, **kwargs):
+    """Send a text reply. Accepts optional quick_reply kwarg."""
+    api.reply_message(
+        ReplyMessageRequest(
+            reply_token=token,
+            messages=[TextMessage(text=text, **kwargs)],
+        )
+    )
 
 def get_push_targets():
     """Get push notification targets from PushTarget table."""
@@ -159,39 +219,34 @@ def handle_text_message(event):
     text = raw_text.lower()
 
     # Chinese command aliases
-    chinese_aliases = {
-        '加': 'add',
-        '刪除': 'remove',
-        '修改': 'modify',
-        '今天': 'today',
-        '報告': 'report',
-        '歷史': 'history',
-    }
-    for zh, en in chinese_aliases.items():
+    for zh, cmd in CHINESE_ALIASES.items():
         if text == zh or text.startswith(zh + ' '):
-            raw_text = en + raw_text[len(zh):]
+            raw_text = cmd.value + raw_text[len(zh):]
             text = raw_text.lower()
             break
 
-    # Safely get user_id (works in both 1-on-1 and group chats)
     user_id = getattr(event.source, 'user_id', None)
 
-    # If user previously tapped "記錄飲食" and this text isn't a known command,
-    # treat it as food input: prepend "add " so the add handler picks it up.
-    _known_commands = ('add', 'remove', 'modify', 'today', 'history', 'report',
-                       'help', 'myid', 'db', 'clear', 'articles', 'set tdee',
-                       'adduser', 'removeuser', 'listusers',
-                       'addtarget', 'removetarget', 'listtargets')
+    # Pending-state: if user previously tapped a Rich Menu button and this text
+    # isn't a known command, prepend the appropriate command keyword.
+    def _is_command(t):
+        return any(t == c or t.startswith(c + ' ') for c in _KNOWN_COMMANDS)
+
     if user_id and _pending_add.pop(user_id, False):
-        if not any(text == cmd or text.startswith(cmd + ' ') for cmd in _known_commands):
-            raw_text = f'add {raw_text}'
+        if not _is_command(text):
+            raw_text = f'{Cmd.ADD} {raw_text}'
+            text = raw_text.lower()
+
+    if user_id and _pending_remove.pop(user_id, False):
+        if not _is_command(text):
+            raw_text = f'{Cmd.REMOVE} {raw_text}'
             text = raw_text.lower()
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
         # Help command (no auth required)
-        if text == 'help':
+        if text == Cmd.HELP:
             help_lines = [
                 "📋 指令列表：",
                 "",
@@ -201,7 +256,7 @@ def handle_text_message(event):
                 "飲食追蹤（不需授權）：",
                 "▸ add {描述} — 記錄食物（支援多項）",
                 "▸ 直接傳食物照片 — AI 辨識並記錄",
-                "▸ remove {編號} — 刪除今日食物紀錄",
+                "▸ remove {編號} — 刪除（支援多筆，如 remove 1 3）",
                 "▸ modify {編號} {修改內容} — AI 重新估算",
                 "▸ today — 顯示今日飲食紀錄",
                 "▸ history — 過去 7 天飲食摘要",
@@ -220,17 +275,10 @@ def handle_text_message(event):
                 "▸ removetarget <id> — 移除推播對象",
                 "▸ listtargets — 列出所有推播對象",
             ]
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="\n".join(help_lines))]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, "\n".join(help_lines))
             return
 
-        # Command to show user ID and group ID (requires auth)
-        if text == 'myid':
-
+        if text == Cmd.MYID:
             group_id = getattr(event.source, 'group_id', None)
             room_id = getattr(event.source, 'room_id', None)
 
@@ -243,30 +291,21 @@ def handle_text_message(event):
                 info_lines.append(f"Room ID: {room_id}")
 
             if info_lines:
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="\n".join(info_lines))]
-                    )
-                )
+                _reply(line_bot_api, event.reply_token, "\n".join(info_lines))
             return
 
         # Command: add food (no auth required) — natural language, supports multiple items
-        if text == 'add' or text.startswith('add '):
+        if text == Cmd.ADD or text.startswith(Cmd.ADD + ' '):
             food_text = raw_text[3:].strip() if len(raw_text) > 3 else ''
             if not food_text:
                 _pending_add[user_id] = True
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(
-                            text="請輸入吃了什麼，或傳食物照片：\n例: 一碗滷肉飯和一杯豆漿",
-                            quick_reply=QuickReply(items=[
-                                QuickReplyItem(action=CameraAction(label="📷 拍照")),
-                                QuickReplyItem(action=CameraRollAction(label="🖼 相簿")),
-                            ]),
-                        )]
-                    )
+                _reply(
+                    line_bot_api, event.reply_token,
+                    "請輸入吃了什麼，或傳食物照片：\n例: 一碗滷肉飯和一杯豆漿",
+                    quick_reply=QuickReply(items=[
+                        QuickReplyItem(action=CameraAction(label="📷 拍照")),
+                        QuickReplyItem(action=CameraRollAction(label="🖼 相簿")),
+                    ]),
                 )
                 return
             else:
@@ -309,37 +348,54 @@ def handle_text_message(event):
                     if not saved:
                         response += "\n(Warning: failed to save to storage)"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: remove food by index (no auth required)
-        if text.startswith('remove '):
-            parts = raw_text.split(maxsplit=1)
-            if len(parts) < 2 or not parts[1].isdigit():
-                response = "Usage: remove {number}\nUse 'today' to see the numbered list."
-            else:
-                index = int(parts[1])
-                removed = remove_food_entry(user_id, index)
+        # Supports: remove 1 | remove 1 3 5 | bare "remove" (shows today + waits)
+        if text == Cmd.REMOVE or text.startswith(Cmd.REMOVE + ' '):
+            args_text = raw_text[6:].strip() if len(raw_text) > 6 else ''
+
+            # Bare "remove" — show today's log and wait for index input
+            if not args_text:
+                foods = get_today_log(user_id)
+                if not foods:
+                    response = "No food logged today."
+                else:
+                    _pending_remove[user_id] = True
+                    report = build_daily_report(foods)
+                    response = f"{report}\n\n請輸入要刪除的編號（可多筆，空格隔開）\n例: 1 3"
+
+                _reply(line_bot_api, event.reply_token, response)
+                return
+
+            # Parse index numbers (support "1 3 5" or single "1")
+            indices = []
+            for part in args_text.split():
+                if part.isdigit():
+                    indices.append(int(part))
+
+            if not indices:
+                response = "Usage: remove {編號} [編號 ...]\n例: remove 1 或 remove 1 3 5"
+            elif len(indices) == 1:
+                removed = remove_food_entry(user_id, indices[0])
                 if removed:
                     response = f"Removed: {removed['name']}"
                 else:
-                    response = f"Invalid index: {index}. Use 'today' to see the list."
+                    response = f"Invalid index: {indices[0]}. Use 'today' to see the list."
+            else:
+                removed_list = remove_food_entries(user_id, indices)
+                if removed_list:
+                    names = ', '.join(r['name'] for r in removed_list)
+                    response = f"Removed {len(removed_list)} items: {names}"
+                else:
+                    response = "No valid indices. Use 'today' to see the list."
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: modify food by index (no auth required)
-        if text.startswith('modify '):
+        if text.startswith(Cmd.MODIFY + ' '):
             parts = raw_text.split(maxsplit=2)
             if len(parts) < 3 or not parts[1].isdigit():
                 response = "Usage: modify {編號} {修改內容}\nExample: modify 1 其實只有半碗"
@@ -369,29 +425,19 @@ def handle_text_message(event):
                         if not saved:
                             response += "\n(Warning: failed to save to storage)"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: today (no auth required)
-        if text == 'today':
+        if text == Cmd.TODAY:
             foods = get_today_log(user_id)
             response = build_daily_report(foods)
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: history (no auth required)
-        if text == 'history':
+        if text == Cmd.HISTORY:
             history = get_history(user_id)
             if not history:
                 response = "No food logged in the past 7 days."
@@ -405,16 +451,11 @@ def handle_text_message(event):
                     lines.append(f"{display_date} — {total_cal:.0f} kcal ({count} items)")
                 response = "\n".join(lines)
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: set tdee (no auth required)
-        if text.startswith('set tdee '):
+        if text.startswith(Cmd.SET_TDEE + ' '):
             parts = raw_text.split(maxsplit=2)
             if len(parts) < 3 or not parts[2].isdigit():
                 response = "Usage: set tdee {number}\nExample: set tdee 2000"
@@ -423,16 +464,11 @@ def handle_text_message(event):
                 set_tdee(user_id, tdee_val)
                 response = f"TDEE set to {tdee_val} kcal/day"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command: report [prompt] (no auth required) — daily report with AI advice
-        if text == 'report' or text.startswith('report '):
+        if text == Cmd.REPORT or text.startswith(Cmd.REPORT + ' '):
             foods = get_today_log(user_id)
             report_lines = build_daily_report(foods)
 
@@ -449,16 +485,11 @@ def handle_text_message(event):
                 if advice:
                     report_lines += f"\n\n--- AI Advice ---\n{advice}"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=report_lines)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, report_lines)
             return
 
         # Command to show all articles in DB
-        if text in ['db']:
+        if text == Cmd.DB:
             if not is_authorized(event):
                 return
 
@@ -471,30 +502,20 @@ def handle_text_message(event):
             else:
                 response = "資料庫沒有文章"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to clear all articles from DB
-        if text == 'clear':
+        if text == Cmd.CLEAR:
             if not is_authorized(event):
                 return
 
             count, _ = ParsedArticle.objects.all().delete()
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=f"已清除 {count} 篇文章")]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, f"已清除 {count} 篇文章")
             return
 
         # Command to get this week's articles
-        if text in ['articles']:
+        if text == Cmd.ARTICLES:
             if not is_authorized(event):
                 return
 
@@ -515,16 +536,11 @@ def handle_text_message(event):
             else:
                 response = "本週沒有新文章"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to add an authorized user
-        if text.startswith('adduser'):
+        if text.startswith(Cmd.ADDUSER):
             if not is_authorized(event):
                 return
 
@@ -544,16 +560,11 @@ def handle_text_message(event):
                 else:
                     response = f"用戶已存在: {new_id}"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to remove an authorized user
-        if text.startswith('removeuser'):
+        if text.startswith(Cmd.REMOVEUSER):
             if not is_authorized(event):
                 return
 
@@ -569,16 +580,11 @@ def handle_text_message(event):
                 else:
                     response = f"找不到用戶: {remove_id}"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to list all authorized users
-        if text == 'listusers':
+        if text == Cmd.LISTUSERS:
             if not is_authorized(event):
                 return
 
@@ -594,16 +600,11 @@ def handle_text_message(event):
             else:
                 response = "沒有授權用戶"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to add a push target
-        if text.startswith('addtarget'):
+        if text.startswith(Cmd.ADDTARGET):
             if not is_authorized(event):
                 return
 
@@ -623,16 +624,11 @@ def handle_text_message(event):
                 else:
                     response = f"推播對象已存在: {new_id}"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to remove a push target
-        if text.startswith('removetarget'):
+        if text.startswith(Cmd.REMOVETARGET):
             if not is_authorized(event):
                 return
 
@@ -648,16 +644,11 @@ def handle_text_message(event):
                 else:
                     response = f"找不到推播對象: {remove_id}"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
         # Command to list all push targets
-        if text == 'listtargets':
+        if text == Cmd.LISTTARGETS:
             if not is_authorized(event):
                 return
 
@@ -673,12 +664,7 @@ def handle_text_message(event):
             else:
                 response = "沒有推播對象"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
             return
 
 
@@ -703,12 +689,8 @@ def handle_image_message(event):
 
             food_name = result.get('food_name')
             if not food_name:
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="Could not identify food in this photo. Try a clearer photo or use 'add {food name}'.")]
-                    )
-                )
+                _reply(line_bot_api, event.reply_token,
+                       "Could not identify food in this photo. Try a clearer photo or use 'add {food name}'.")
                 return
 
             food_entry = {
@@ -739,20 +721,11 @@ def handle_image_message(event):
             if not saved:
                 response += "\n(Warning: failed to save to storage)"
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
-            )
+            _reply(line_bot_api, event.reply_token, response)
         except Exception as e:
             logger.error(f"Image message handling error: {e}")
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="Failed to process the image. Please try again.")]
-                )
-            )
+            _reply(line_bot_api, event.reply_token,
+                   "Failed to process the image. Please try again.")
 
 
 @csrf_exempt

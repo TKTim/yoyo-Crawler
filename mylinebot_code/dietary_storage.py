@@ -108,6 +108,36 @@ def remove_food_entry(user_id, index):
     return removed
 
 
+def remove_food_entries(user_id, indices):
+    """
+    Remove multiple food entries by 1-based indices from today's log.
+    Indices are processed in descending order so earlier indices stay valid.
+    Returns list of removed food dicts. Invalid indices are skipped.
+    """
+    from .models import FoodEntry
+    from .gist_storage import save_dietary_to_gist
+
+    today = _today_date()
+    entries = list(FoodEntry.objects.filter(user_id=user_id, date=today).order_by('added_at'))
+
+    if not entries:
+        return []
+
+    removed = []
+    for index in sorted(set(indices), reverse=True):
+        if index < 1 or index > len(entries):
+            continue
+        entry = entries[index - 1]
+        removed.append(_entry_to_dict(entry))
+        entry.delete()
+
+    if removed:
+        save_dietary_to_gist()
+
+    removed.reverse()  # return in original index order
+    return removed
+
+
 def get_food_entry_by_index(user_id, index):
     """
     Get a food entry by 1-based index from today's log.
