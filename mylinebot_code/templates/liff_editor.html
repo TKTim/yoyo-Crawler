@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>飲食紀錄編輯器</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -229,12 +230,28 @@ body {
   transition: opacity 0.3s;
 }
 .toast.show { opacity: 1; }
+
+/* Chart */
+.chart-card {
+  background: #fff;
+  border-radius: 10px;
+  margin: 12px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.chart-card canvas {
+  width: 100% !important;
+  max-height: 200px;
+}
 </style>
 </head>
 <body>
 <div class="header">飲食紀錄編輯器</div>
 <div id="loading" class="loading">載入中...</div>
 <div id="error" class="error-msg" style="display:none;"></div>
+<div id="chartContainer" class="chart-card" style="display:none;">
+  <canvas id="weeklyChart"></canvas>
+</div>
 <div id="content" style="display:none;"></div>
 
 <div id="deleteModal" class="modal-overlay">
@@ -291,11 +308,108 @@ async function loadEntries() {
     const res = await apiFetch('/liff/api/entries/');
     ENTRIES_DATA = res.data;
     renderEntries();
+    renderChart();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
   } catch (e) {
     showError('載入失敗: ' + e.message);
   }
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+let chartInstance = null;
+
+function renderChart() {
+  // Build last 7 days (including days with no data)
+  const labels = [];
+  const calData = [];
+  const proData = [];
+  const today = new Date();
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toLocaleDateString('sv-SE'); // YYYY-MM-DD
+    const display = dateStr.slice(5).replace('-', '/');
+    labels.push(display);
+
+    const entries = ENTRIES_DATA[dateStr] || [];
+    calData.push(entries.reduce((s, e) => s + (e.calories || 0), 0));
+    proData.push(entries.reduce((s, e) => s + (e.protein || 0), 0));
+  }
+
+  const container = document.getElementById('chartContainer');
+  // Hide chart if no data at all
+  if (calData.every(v => v === 0)) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  const ctx = document.getElementById('weeklyChart').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '熱量 (kcal)',
+          data: calData,
+          borderColor: '#e65100',
+          backgroundColor: 'rgba(230,81,0,0.1)',
+          yAxisID: 'yCal',
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#e65100',
+        },
+        {
+          label: '蛋白質 (g)',
+          data: proData,
+          borderColor: '#1565c0',
+          backgroundColor: 'rgba(21,101,192,0.1)',
+          yAxisID: 'yPro',
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#1565c0',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { boxWidth: 12, font: { size: 12 } },
+        },
+      },
+      scales: {
+        yCal: {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'kcal', font: { size: 11 } },
+          beginAtZero: true,
+          ticks: { font: { size: 11 } },
+        },
+        yPro: {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'g', font: { size: 11 } },
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { font: { size: 11 } },
+        },
+        x: {
+          ticks: { font: { size: 11 } },
+        },
+      },
+    },
+  });
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
