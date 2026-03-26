@@ -17,6 +17,10 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     PushMessageRequest,
     TextMessage,
+    QuickReply,
+    QuickReplyItem,
+    CameraAction,
+    CameraRollAction,
 )
 from linebot.v3.messaging.api import MessagingApiBlob
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
@@ -233,10 +237,22 @@ def handle_text_message(event):
             return
 
         # Command: add food (no auth required) — natural language, supports multiple items
-        if text.startswith('add '):
-            food_text = raw_text[4:].strip()
+        if text == 'add' or text.startswith('add '):
+            food_text = raw_text[3:].strip() if len(raw_text) > 3 else ''
             if not food_text:
-                response = "Usage: add {description of food}\nExample: add 早餐吃了一顆蛋和一杯豆漿"
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(
+                            text="請輸入吃了什麼，或傳食物照片\nExample: add 一碗滷肉飯和一杯豆漿",
+                            quick_reply=QuickReply(items=[
+                                QuickReplyItem(action=CameraAction(label="📷 拍照")),
+                                QuickReplyItem(action=CameraRollAction(label="🖼 相簿")),
+                            ]),
+                        )]
+                    )
+                )
+                return
             else:
                 foods_list = parse_and_estimate_foods(food_text)
 
