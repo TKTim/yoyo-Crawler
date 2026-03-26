@@ -34,4 +34,5 @@ urllib3==2.5.0
 wrapt==2.0.1
 yarl==1.22.0
 gunicorn==21.2.0
+Pillow==11.2.1
 whitenoise==6.6.0
