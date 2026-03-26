@@ -55,7 +55,7 @@ def _generate_menu_image():
 
     # Try to load a font that supports CJK
     font = None
-    font_size = 48
+    font_size = 64
     font_paths = [
         # macOS
         '/System/Library/Fonts/PingFang.ttc',

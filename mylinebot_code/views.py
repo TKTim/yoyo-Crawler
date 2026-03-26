@@ -35,6 +35,10 @@ from .gemini_api import estimate_nutrition, estimate_nutrition_from_image, parse
 configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
 
+# Track users waiting to input food text (user_id -> True)
+# When user sends bare "add", we set this flag so the next plain text is treated as food.
+_pending_add = {}
+
 def get_push_targets():
     """Get push notification targets from PushTarget table."""
     return list(PushTarget.objects.values_list('target_id', flat=True))
@@ -172,6 +176,17 @@ def handle_text_message(event):
     # Safely get user_id (works in both 1-on-1 and group chats)
     user_id = getattr(event.source, 'user_id', None)
 
+    # If user previously tapped "記錄飲食" and this text isn't a known command,
+    # treat it as food input: prepend "add " so the add handler picks it up.
+    _known_commands = ('add', 'remove', 'modify', 'today', 'history', 'report',
+                       'help', 'myid', 'db', 'clear', 'articles', 'set tdee',
+                       'adduser', 'removeuser', 'listusers',
+                       'addtarget', 'removetarget', 'listtargets')
+    if user_id and _pending_add.pop(user_id, False):
+        if not any(text == cmd or text.startswith(cmd + ' ') for cmd in _known_commands):
+            raw_text = f'add {raw_text}'
+            text = raw_text.lower()
+
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
@@ -240,11 +255,12 @@ def handle_text_message(event):
         if text == 'add' or text.startswith('add '):
             food_text = raw_text[3:].strip() if len(raw_text) > 3 else ''
             if not food_text:
+                _pending_add[user_id] = True
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
                         messages=[TextMessage(
-                            text="請輸入吃了什麼，或傳食物照片\nExample: add 一碗滷肉飯和一杯豆漿",
+                            text="請輸入吃了什麼，或傳食物照片：\n例: 一碗滷肉飯和一杯豆漿",
                             quick_reply=QuickReply(items=[
                                 QuickReplyItem(action=CameraAction(label="📷 拍照")),
                                 QuickReplyItem(action=CameraRollAction(label="🖼 相簿")),
