@@ -234,12 +234,12 @@ def handle_text_message(event):
 
     if user_id and _pending_add.pop(user_id, False):
         if not _is_command(text):
-            raw_text = f'{Cmd.ADD} {raw_text}'
+            raw_text = f'{Cmd.ADD.value} {raw_text}'
             text = raw_text.lower()
 
     if user_id and _pending_remove.pop(user_id, False):
         if not _is_command(text):
-            raw_text = f'{Cmd.REMOVE} {raw_text}'
+            raw_text = f'{Cmd.REMOVE.value} {raw_text}'
             text = raw_text.lower()
 
     with ApiClient(configuration) as api_client:
