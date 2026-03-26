@@ -17,6 +17,7 @@ from .dietary_storage import (
     delete_entry_by_id,
     add_entry_for_date,
 )
+from .gemini_api import parse_and_estimate_foods
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +120,40 @@ def api_entry_detail(request, entry_id):
         return JsonResponse({'status': 'ok'})
 
     return _json_error('Method not allowed', 405)
+
+
+@csrf_exempt
+def api_ai_add(request):
+    """
+    POST → parse food description with AI, estimate nutrition, save entries.
+    Body: {"text": "一碗滷肉飯和一杯豆漿", "date": "2026-03-26"}
+    """
+    if request.method != 'POST':
+        return _json_error('Method not allowed', 405)
+
+    user_id = _get_liff_user_id(request)
+    if not user_id:
+        return _json_error('Unauthorized', 401)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error('Invalid JSON')
+
+    text = body.get('text', '').strip()
+    date_str = body.get('date', '')
+    if not text:
+        return _json_error('Missing "text" field')
+    if not date_str:
+        return _json_error('Missing "date" field')
+
+    foods = parse_and_estimate_foods(text)
+    if not foods:
+        return _json_error('AI 無法辨識食物，請再試一次', 422)
+
+    saved = []
+    for food in foods:
+        entry = add_entry_for_date(user_id, date_str, food)
+        saved.append(entry)
+
+    return JsonResponse({'status': 'ok', 'entries': saved}, status=201)

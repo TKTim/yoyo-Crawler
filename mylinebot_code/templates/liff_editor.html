@@ -111,6 +111,46 @@ body {
   cursor: pointer;
   margin-top: 4px;
 }
+.btn-add-outline {
+  background: #fff;
+  color: #06c755;
+  border: 2px solid #06c755;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.ai-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ai-input-row input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.ai-input-row .btn {
+  white-space: nowrap;
+  padding: 10px 16px;
+}
+.btn-ai { background: #7c4dff; color: #fff; }
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Edit form */
 .edit-form { display: none; }
@@ -342,8 +382,18 @@ function renderCard(entry, dateStr) {
 
 function renderAddButton(dateStr) {
   const formId = 'add-' + dateStr;
+  const aiId = 'ai-' + dateStr;
   return `
-  <button class="btn-add" onclick="toggleAddForm('${formId}')">+ 新增</button>
+  <div style="display:flex; gap:8px; margin-top:4px;">
+    <button class="btn-add" onclick="toggleAddForm('${aiId}')" style="flex:1;">+ AI 新增</button>
+    <button class="btn-add-outline" onclick="toggleAddForm('${formId}')" style="flex:1;">手動新增</button>
+  </div>
+  <div class="add-form" id="${aiId}">
+    <div class="ai-input-row">
+      <input id="${aiId}-text" placeholder="描述吃了什麼，例: 一碗滷肉飯和一杯豆漿">
+      <button class="btn btn-ai" id="${aiId}-btn" onclick="submitAiAdd('${aiId}', '${dateStr}')">AI 估算</button>
+    </div>
+  </div>
   <div class="add-form" id="${formId}">
     <div class="edit-row"><label>名稱</label><input id="${formId}-name"></div>
     <div class="edit-row"><label>描述</label><input id="${formId}-desc"></div>
@@ -426,6 +476,32 @@ async function confirmDelete() {
 // ── Add actions ───────────────────────────────────────────────────────────────
 function toggleAddForm(formId) {
   document.getElementById(formId).classList.toggle('active');
+}
+
+async function submitAiAdd(aiId, dateStr) {
+  const input = document.getElementById(`${aiId}-text`);
+  const btn = document.getElementById(`${aiId}-btn`);
+  const text = input.value.trim();
+  if (!text) { showToast('請輸入食物描述'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>估算中';
+
+  try {
+    await apiFetch('/liff/api/ai-add/', {
+      method: 'POST',
+      body: JSON.stringify({ text, date: dateStr }),
+    });
+    input.value = '';
+    document.getElementById(aiId).classList.remove('active');
+    showToast('已新增');
+    await loadEntries();
+  } catch (e) {
+    showToast(e.message || '新增失敗');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'AI 估算';
+  }
 }
 
 async function submitAdd(formId, dateStr) {
