@@ -141,11 +141,22 @@ body {
   padding: 10px 16px;
 }
 .btn-ai { background: #7c4dff; color: #fff; }
+.btn-ai-edit { background: #ede7f6; color: #7c4dff; }
 .spinner {
   display: inline-block;
   width: 14px; height: 14px;
   border: 2px solid rgba(255,255,255,0.3);
   border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.spinner-dark {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(124,77,255,0.3);
+  border-top-color: #7c4dff;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
   vertical-align: middle;
@@ -189,6 +200,47 @@ body {
   display: none;
 }
 .add-form.active { display: block; }
+
+/* AI modify inline form */
+.ai-modify-form {
+  margin-top: 8px;
+  display: none;
+}
+.ai-modify-form.active { display: block; }
+
+/* Photo upload buttons */
+.photo-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.btn-photo {
+  flex: 1;
+  background: #fff;
+  color: #7c4dff;
+  border: 2px solid #7c4dff;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.photo-preview {
+  display: none;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.photo-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+}
+.photo-preview .photo-status {
+  font-size: 13px;
+  color: #888;
+  margin-top: 4px;
+}
 
 /* Modal overlay */
 .modal-overlay {
@@ -243,10 +295,41 @@ body {
   width: 100% !important;
   max-height: 200px;
 }
+
+/* Add-only mode */
+.add-mode-section {
+  margin: 12px;
+}
+.add-mode-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.add-mode-card h3 {
+  font-size: 15px;
+  color: #555;
+  margin-bottom: 10px;
+}
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  color: #bbb;
+  font-size: 13px;
+}
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid #e0e0e0;
+}
 </style>
 </head>
 <body>
-<div class="header">飲食紀錄編輯器</div>
+<div class="header" id="pageHeader">飲食紀錄編輯器</div>
 <div id="loading" class="loading">載入中...</div>
 <div id="error" class="error-msg" style="display:none;"></div>
 <div id="chartContainer" class="chart-card" style="display:none;">
@@ -265,10 +348,15 @@ body {
   </div>
 </div>
 
+<!-- Hidden file inputs for photo upload -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+<input type="file" id="galleryInput" accept="image/*" style="display:none;">
+
 <div id="toast" class="toast"></div>
 
 <script>
 const LIFF_ID = '{{ liff_id }}';
+const MODE = '{{ mode }}';
 let ACCESS_TOKEN = '';
 let ENTRIES_DATA = {};
 
@@ -281,7 +369,16 @@ async function initLiff() {
       return;
     }
     ACCESS_TOKEN = liff.getAccessToken();
-    await loadEntries();
+
+    if (MODE === 'add') {
+      document.getElementById('pageHeader').textContent = '記錄飲食';
+      document.getElementById('chartContainer').style.display = 'none';
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+      renderAddMode();
+    } else {
+      await loadEntries();
+    }
   } catch (e) {
     showError('LIFF 初始化失敗: ' + e.message);
   }
@@ -324,6 +421,7 @@ function renderChart() {
   const labels = [];
   const calData = [];
   const proData = [];
+  const carbData = [];
   const today = new Date();
 
   for (let i = 6; i >= 0; i--) {
@@ -336,6 +434,7 @@ function renderChart() {
     const entries = ENTRIES_DATA[dateStr] || [];
     calData.push(entries.reduce((s, e) => s + (e.calories || 0), 0));
     proData.push(entries.reduce((s, e) => s + (e.protein || 0), 0));
+    carbData.push(entries.reduce((s, e) => s + (e.carbs || 0), 0));
   }
 
   const container = document.getElementById('chartContainer');
@@ -371,10 +470,20 @@ function renderChart() {
           data: proData,
           borderColor: '#1565c0',
           backgroundColor: 'rgba(21,101,192,0.1)',
-          yAxisID: 'yPro',
+          yAxisID: 'yGram',
           tension: 0.3,
           pointRadius: 4,
           pointBackgroundColor: '#1565c0',
+        },
+        {
+          label: '碳水 (g)',
+          data: carbData,
+          borderColor: '#2e7d32',
+          backgroundColor: 'rgba(46,125,50,0.1)',
+          yAxisID: 'yGram',
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#2e7d32',
         },
       ],
     },
@@ -396,7 +505,7 @@ function renderChart() {
           beginAtZero: true,
           ticks: { font: { size: 11 } },
         },
-        yPro: {
+        yGram: {
           type: 'linear',
           position: 'right',
           title: { display: true, text: 'g', font: { size: 11 } },
@@ -410,6 +519,183 @@ function renderChart() {
       },
     },
   });
+}
+
+// ── Add-only mode ─────────────────────────────────────────────────────────────
+function renderAddMode() {
+  const content = document.getElementById('content');
+  const today = new Date().toLocaleDateString('sv-SE');
+
+  content.innerHTML = `
+  <div class="add-mode-section">
+    <div class="add-mode-card">
+      <h3>AI 輸入</h3>
+      <div class="ai-input-row">
+        <input id="add-mode-ai-text" placeholder="描述吃了什麼，例: 一碗滷肉飯和一杯豆漿">
+        <button class="btn btn-ai" id="add-mode-ai-btn" onclick="submitAddModeAi()">AI 估算</button>
+      </div>
+    </div>
+
+    <div class="add-mode-card">
+      <h3>拍照 / 上傳照片</h3>
+      <div class="photo-row">
+        <button class="btn-photo" onclick="triggerCamera('add-mode')">拍照</button>
+        <button class="btn-photo" onclick="triggerGallery('add-mode')">相簿</button>
+      </div>
+      <div class="photo-preview" id="add-mode-photo-preview">
+        <img id="add-mode-photo-img">
+        <div class="photo-status" id="add-mode-photo-status"></div>
+      </div>
+    </div>
+
+    <div class="section-divider">或手動輸入</div>
+
+    <div class="add-mode-card">
+      <div class="edit-row"><label>名稱</label><input id="add-mode-name"></div>
+      <div class="edit-row"><label>描述</label><input id="add-mode-desc"></div>
+      <div class="edit-row">
+        <label>熱量</label><input type="number" step="0.1" id="add-mode-cal">
+        <label>蛋白</label><input type="number" step="0.1" id="add-mode-pro">
+      </div>
+      <div class="edit-row">
+        <label>碳水</label><input type="number" step="0.1" id="add-mode-carb">
+        <label>脂肪</label><input type="number" step="0.1" id="add-mode-fat">
+      </div>
+      <button class="btn-add" onclick="submitAddModeManual()">新增</button>
+    </div>
+  </div>`;
+}
+
+async function submitAddModeAi() {
+  const input = document.getElementById('add-mode-ai-text');
+  const btn = document.getElementById('add-mode-ai-btn');
+  const text = input.value.trim();
+  if (!text) { showToast('請輸入食物描述'); return; }
+
+  const today = new Date().toLocaleDateString('sv-SE');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>估算中';
+
+  try {
+    await apiFetch('/liff/api/ai-add/', {
+      method: 'POST',
+      body: JSON.stringify({ text, date: today }),
+    });
+    input.value = '';
+    showToast('已新增');
+    if (liff.isInClient()) {
+      setTimeout(() => liff.closeWindow(), 800);
+    }
+  } catch (e) {
+    showToast(e.message || '新增失敗');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'AI 估算';
+  }
+}
+
+async function submitAddModeManual() {
+  const name = document.getElementById('add-mode-name').value.trim();
+  if (!name) { showToast('請輸入名稱'); return; }
+
+  const today = new Date().toLocaleDateString('sv-SE');
+  const body = {
+    date: today,
+    name: name,
+    description: document.getElementById('add-mode-desc').value,
+    calories: parseNum('add-mode-cal'),
+    protein: parseNum('add-mode-pro'),
+    carbs: parseNum('add-mode-carb'),
+    fat: parseNum('add-mode-fat'),
+  };
+
+  try {
+    await apiFetch('/liff/api/entries/', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    showToast('已新增');
+    if (liff.isInClient()) {
+      setTimeout(() => liff.closeWindow(), 800);
+    }
+  } catch (e) {
+    showToast('新增失敗: ' + e.message);
+  }
+}
+
+// ── Photo upload ──────────────────────────────────────────────────────────────
+let activePhotoContext = '';
+
+function triggerCamera(context) {
+  activePhotoContext = context;
+  const input = document.getElementById('cameraInput');
+  input.value = '';
+  input.click();
+}
+
+function triggerGallery(context) {
+  activePhotoContext = context;
+  const input = document.getElementById('galleryInput');
+  input.value = '';
+  input.click();
+}
+
+document.getElementById('cameraInput').addEventListener('change', handlePhotoSelect);
+document.getElementById('galleryInput').addEventListener('change', handlePhotoSelect);
+
+async function handlePhotoSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const context = activePhotoContext;
+  const preview = document.getElementById(context + '-photo-preview');
+  const img = document.getElementById(context + '-photo-img');
+  const status = document.getElementById(context + '-photo-status');
+
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    img.src = ev.target.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+
+  status.innerHTML = '<span class="spinner-dark"></span> AI 辨識中...';
+
+  // Determine date
+  let dateStr;
+  if (context === 'add-mode') {
+    dateStr = new Date().toLocaleDateString('sv-SE');
+  } else {
+    // context is like "photo-2026-03-27" → extract date
+    dateStr = context.replace('photo-', '');
+  }
+
+  const formData = new FormData();
+  formData.append('image', file);
+  formData.append('date', dateStr);
+
+  try {
+    const res = await fetch('/liff/api/image-add/', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + ACCESS_TOKEN },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'API error');
+
+    status.textContent = '已新增: ' + data.entry.name;
+    showToast('已新增: ' + data.entry.name);
+
+    if (MODE === 'add' && liff.isInClient()) {
+      setTimeout(() => liff.closeWindow(), 1200);
+    } else if (MODE !== 'add') {
+      await loadEntries();
+    }
+  } catch (e) {
+    status.textContent = e.message || '辨識失敗';
+    showToast(e.message || '辨識失敗');
+  }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -457,6 +743,7 @@ function formatDate(dateStr, today) {
 function renderCard(entry, dateStr) {
   const desc = entry.description ? `<div class="entry-desc">${esc(entry.description)}</div>` : '';
   const basis = entry.basis ? `<div class="entry-basis">${esc(entry.basis)}</div>` : '';
+  const escapedName = esc(entry.name).replace(/'/g, "\\'");
 
   return `
   <div class="entry-card" id="card-${entry.id}">
@@ -471,8 +758,18 @@ function renderCard(entry, dateStr) {
       </div>
       ${basis}
       <div class="entry-actions">
+        <button class="btn btn-ai-edit" onclick="startAiModify(${entry.id})">AI 修改</button>
         <button class="btn btn-edit" onclick="startEdit(${entry.id})">編輯</button>
-        <button class="btn btn-delete" onclick="askDelete(${entry.id}, '${esc(entry.name)}')">刪除</button>
+        <button class="btn btn-delete" onclick="askDelete(${entry.id}, '${escapedName}')">刪除</button>
+      </div>
+    </div>
+    <div class="ai-modify-form" id="ai-mod-${entry.id}">
+      <div class="ai-input-row">
+        <input id="ai-mod-text-${entry.id}" placeholder="描述修改，例: 其實只有半碗">
+        <button class="btn btn-ai" id="ai-mod-btn-${entry.id}" onclick="submitAiModify(${entry.id})">AI 修改</button>
+      </div>
+      <div class="entry-actions">
+        <button class="btn btn-cancel" onclick="cancelAiModify(${entry.id})">取消</button>
       </div>
     </div>
     <div class="edit-form" id="edit-${entry.id}">
@@ -497,6 +794,7 @@ function renderCard(entry, dateStr) {
 function renderAddButton(dateStr) {
   const formId = 'add-' + dateStr;
   const aiId = 'ai-' + dateStr;
+  const photoCtx = 'photo-' + dateStr;
   return `
   <div style="display:flex; gap:8px; margin-top:4px;">
     <button class="btn-add" onclick="toggleAddForm('${aiId}')" style="flex:1;">+ AI 新增</button>
@@ -506,6 +804,15 @@ function renderAddButton(dateStr) {
     <div class="ai-input-row">
       <input id="${aiId}-text" placeholder="描述吃了什麼，例: 一碗滷肉飯和一杯豆漿">
       <button class="btn btn-ai" id="${aiId}-btn" onclick="submitAiAdd('${aiId}', '${dateStr}')">AI 估算</button>
+    </div>
+    <div class="section-divider">或拍照上傳</div>
+    <div class="photo-row">
+      <button class="btn-photo" onclick="triggerCamera('${photoCtx}')">拍照</button>
+      <button class="btn-photo" onclick="triggerGallery('${photoCtx}')">相簿</button>
+    </div>
+    <div class="photo-preview" id="${photoCtx}-photo-preview">
+      <img id="${photoCtx}-photo-img">
+      <div class="photo-status" id="${photoCtx}-photo-status"></div>
     </div>
   </div>
   <div class="add-form" id="${formId}">
@@ -524,6 +831,41 @@ function renderAddButton(dateStr) {
       <button class="btn btn-save" onclick="submitAdd('${formId}', '${dateStr}')">新增</button>
     </div>
   </div>`;
+}
+
+// ── AI Modify actions ─────────────────────────────────────────────────────────
+function startAiModify(id) {
+  document.getElementById(`ai-mod-${id}`).classList.add('active');
+  document.getElementById(`ai-mod-text-${id}`).focus();
+}
+
+function cancelAiModify(id) {
+  document.getElementById(`ai-mod-${id}`).classList.remove('active');
+  document.getElementById(`ai-mod-text-${id}`).value = '';
+}
+
+async function submitAiModify(id) {
+  const input = document.getElementById(`ai-mod-text-${id}`);
+  const btn = document.getElementById(`ai-mod-btn-${id}`);
+  const text = input.value.trim();
+  if (!text) { showToast('請輸入修改描述'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>修改中';
+
+  try {
+    await apiFetch(`/liff/api/ai-modify/${id}/`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    showToast('已更新');
+    await loadEntries();
+  } catch (e) {
+    showToast(e.message || '修改失敗');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'AI 修改';
+  }
 }
 
 // ── Edit actions ──────────────────────────────────────────────────────────────

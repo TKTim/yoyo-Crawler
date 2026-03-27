@@ -35,4 +35,6 @@ urlpatterns = [
     path('liff/api/entries/', liff_views.api_entries, name='liff_api_entries'),
     path('liff/api/entries/<int:entry_id>/', liff_views.api_entry_detail, name='liff_api_entry_detail'),
     path('liff/api/ai-add/', liff_views.api_ai_add, name='liff_api_ai_add'),
+    path('liff/api/ai-modify/<int:entry_id>/', liff_views.api_ai_modify, name='liff_api_ai_modify'),
+    path('liff/api/image-add/', liff_views.api_image_add, name='liff_api_image_add'),
 ]

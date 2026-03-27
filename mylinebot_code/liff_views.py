@@ -17,7 +17,7 @@ from .dietary_storage import (
     delete_entry_by_id,
     add_entry_for_date,
 )
-from .gemini_api import parse_and_estimate_foods
+from .gemini_api import parse_and_estimate_foods, modify_food_estimation, estimate_nutrition_from_image
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ def liff_editor(request):
     """Render the LIFF editor HTML page."""
     return render(request, 'liff_editor.html', {
         'liff_id': settings.LIFF_ID,
+        'mode': request.GET.get('mode', ''),
     })
 
 
@@ -157,3 +158,85 @@ def api_ai_add(request):
         saved.append(entry)
 
     return JsonResponse({'status': 'ok', 'entries': saved}, status=201)
+
+
+@csrf_exempt
+def api_ai_modify(request, entry_id):
+    """POST → AI re-estimate an entry based on modification text."""
+    if request.method != 'POST':
+        return _json_error('Method not allowed', 405)
+
+    user_id = _get_liff_user_id(request)
+    if not user_id:
+        return _json_error('Unauthorized', 401)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error('Invalid JSON')
+
+    text = body.get('text', '').strip()
+    if not text:
+        return _json_error('Missing "text" field')
+
+    # Fetch current entry
+    from .models import FoodEntry
+    entry = FoodEntry.objects.filter(id=entry_id, user_id=user_id).first()
+    if not entry:
+        return _json_error('Entry not found', 404)
+
+    original = {
+        'name': entry.name,
+        'description': entry.description,
+        'calories': entry.calories or 0,
+        'protein': entry.protein or 0,
+        'carbs': entry.carbs or 0,
+        'fat': entry.fat or 0,
+        'basis': entry.basis or '',
+    }
+
+    result = modify_food_estimation(original, text)
+    if not result:
+        return _json_error('AI 無法處理修改，請再試一次', 422)
+
+    updated = update_entry_by_id(entry_id, user_id, result)
+    return JsonResponse({'status': 'ok', 'entry': updated})
+
+
+@csrf_exempt
+def api_image_add(request):
+    """POST → estimate nutrition from uploaded food photo, save entry."""
+    if request.method != 'POST':
+        return _json_error('Method not allowed', 405)
+
+    user_id = _get_liff_user_id(request)
+    if not user_id:
+        return _json_error('Unauthorized', 401)
+
+    image_file = request.FILES.get('image')
+    if not image_file:
+        return _json_error('Missing image file')
+
+    date_str = request.POST.get('date', '')
+    if not date_str:
+        return _json_error('Missing "date" field')
+
+    image_bytes = image_file.read()
+    mime_type = image_file.content_type or 'image/jpeg'
+
+    result = estimate_nutrition_from_image(image_bytes, mime_type)
+    if not result.get('food_name'):
+        return _json_error('AI 無法辨識食物，請再試一次', 422)
+
+    food_entry = {
+        'name': result['food_name'],
+        'description': '',
+        'calories': result.get('calories'),
+        'protein': result.get('protein'),
+        'carbs': result.get('carbs'),
+        'fat': result.get('fat'),
+        'basis': result.get('basis', ''),
+    }
+
+    entry = add_entry_for_date(user_id, date_str, food_entry)
+    return JsonResponse({'status': 'ok', 'entry': entry}, status=201)

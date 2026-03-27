@@ -40,7 +40,7 @@ CELL_H = MENU_HEIGHT // ROWS
 # action_text starting with 'https://' will use URIAction instead of MessageAction
 BUTTONS = [
     # Row 1
-    ('記錄飲食', 'add ', '#4CAF50'),
+    ('記錄飲食', '__liff_add__', '#4CAF50'),
     ('今日紀錄', 'today', '#2196F3'),
     ('飲食報告', 'report', '#FF9800'),
     # Row 2
@@ -151,6 +151,8 @@ def _build_rich_menu_areas():
 
         if action_text == '__liff__':
             action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}')
+        elif action_text == '__liff_add__':
+            action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=add')
         else:
             action = MessageAction(label=label, text=action_text)
         areas.append(RichMenuArea(bounds=bounds, action=action))
