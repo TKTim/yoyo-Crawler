@@ -1,6 +1,7 @@
 """
-Google Gemini API client for nutrition estimation.
-Tries multiple models with automatic fallback on rate limit / quota errors.
+OpenRouter API client for nutrition estimation.
+Fallback provider when Gemini is unavailable.
+Uses OpenAI-compatible chat completions format with free-tier models.
 """
 import base64
 import json
@@ -16,59 +17,75 @@ from .ai_prompts import (
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
+OPENROUTER_API_KEY = os.environ.get('OPEN_ROUTER_ID', '')
+OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
-# Models to try in order — falls back to next on rate limit / quota / server errors
-GEMINI_MODELS = [
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash-lite',
+# Vision-capable models first, text-only fallback last
+VISION_MODELS = [
+    'google/gemma-3-27b-it:free',
+    'mistralai/mistral-small-3.1-24b-instruct:free',
 ]
 
-# HTTP status codes that trigger fallback to next model
-_RETRYABLE_STATUS_CODES = {429, 500, 503, 403}
+TEXT_MODELS = VISION_MODELS + [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+]
+
+_RETRYABLE_STATUS_CODES = {429, 500, 503}
 
 
-def _gemini_request(payload, timeout=15):
+def _openrouter_request(messages, model_list=None, timeout=30):
     """
-    Send a request to Gemini API, trying each model in GEMINI_MODELS until one succeeds.
-    Returns the parsed JSON response data, or raises the last exception on total failure.
+    Send a chat completion request to OpenRouter, trying each model in order.
+    Returns the response text content, or raises the last exception on total failure.
     """
+    if model_list is None:
+        model_list = TEXT_MODELS
+
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPEN_ROUTER_ID not set")
+
+    headers = {
+        'Authorization': f'Bearer {OPENROUTER_API_KEY}',
+        'Content-Type': 'application/json',
+    }
+
     last_error = None
-    for model in GEMINI_MODELS:
-        url = f'{GEMINI_BASE_URL}/{model}:generateContent'
+    for model in model_list:
         try:
+            payload = {
+                'model': model,
+                'messages': messages,
+            }
             response = requests.post(
-                url,
-                params={'key': GEMINI_API_KEY},
+                OPENROUTER_URL,
+                headers=headers,
                 json=payload,
                 timeout=timeout,
             )
             if response.status_code in _RETRYABLE_STATUS_CODES:
-                logger.warning(f"Gemini model {model} returned {response.status_code}, trying next model")
+                logger.warning(f"OpenRouter model {model} returned {response.status_code}, trying next model")
                 last_error = requests.exceptions.HTTPError(
                     f"{response.status_code} for model {model}", response=response
                 )
                 continue
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            return data['choices'][0]['message']['content']
         except requests.exceptions.Timeout as e:
-            logger.warning(f"Gemini model {model} timed out, trying next model")
+            logger.warning(f"OpenRouter model {model} timed out, trying next model")
             last_error = e
             continue
         except requests.exceptions.HTTPError:
             raise
         except Exception as e:
-            logger.warning(f"Gemini model {model} failed: {e}, trying next model")
+            logger.warning(f"OpenRouter model {model} failed: {e}, trying next model")
             last_error = e
             continue
     raise last_error
 
 
-def _parse_gemini_json(data):
-    """Extract and parse JSON from Gemini response text."""
-    text = data['candidates'][0]['content']['parts'][0]['text']
+def _parse_response_json(text):
+    """Extract and parse JSON from response text (handles markdown fences)."""
     text = text.strip()
     if text.startswith('```'):
         text = text.split('\n', 1)[1] if '\n' in text else text[3:]
@@ -82,12 +99,11 @@ def _parse_gemini_json(data):
 
 def estimate_nutrition(food_name, description=''):
     """
-    Call Gemini API to estimate nutrition for a food item.
-    Returns dict with keys: calories, protein, carbs, fat.
-    Values are floats or None if estimation fails.
+    Call OpenRouter API to estimate nutrition for a food item.
+    Returns dict with keys: calories, protein, carbs, fat, basis.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not set, cannot estimate nutrition")
+    if not OPENROUTER_API_KEY:
+        logger.warning("OPEN_ROUTER_ID not set, cannot estimate nutrition")
         return {'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
     food_desc = food_name
@@ -97,8 +113,9 @@ def estimate_nutrition(food_name, description=''):
     prompt = nutrition_prompt(food_desc)
 
     try:
-        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
-        result = _parse_gemini_json(data)
+        messages = [{'role': 'user', 'content': prompt}]
+        text = _openrouter_request(messages, TEXT_MODELS)
+        result = _parse_response_json(text)
         return {
             'calories': float(result.get('calories', 0)),
             'protein': float(result.get('protein', 0)),
@@ -107,34 +124,35 @@ def estimate_nutrition(food_name, description=''):
             'basis': result.get('basis', ''),
         }
     except Exception as e:
-        logger.error(f"Gemini API error for '{food_desc}': {e}")
+        logger.error(f"OpenRouter API error for '{food_desc}': {e}")
         return {'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
 
 def estimate_nutrition_from_image(image_bytes, mime_type):
     """
-    Call Gemini API to estimate nutrition from a food photo.
+    Call OpenRouter API to estimate nutrition from a food photo.
     Returns dict with keys: food_name, calories, protein, carbs, fat, basis.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not set, cannot estimate nutrition from image")
+    if not OPENROUTER_API_KEY:
+        logger.warning("OPEN_ROUTER_ID not set, cannot estimate nutrition from image")
         return {'food_name': None, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-
     prompt = image_nutrition_prompt()
 
     try:
-        payload = {
-            'contents': [{
-                'parts': [
-                    {'inline_data': {'mime_type': mime_type, 'data': image_b64}},
-                    {'text': prompt},
-                ]
-            }]
-        }
-        data = _gemini_request(payload, timeout=30)
-        result = _parse_gemini_json(data)
+        messages = [{
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'image_url',
+                    'image_url': {'url': f'data:{mime_type};base64,{image_b64}'},
+                },
+                {'type': 'text', 'text': prompt},
+            ],
+        }]
+        text = _openrouter_request(messages, VISION_MODELS, timeout=45)
+        result = _parse_response_json(text)
         return {
             'food_name': result.get('food_name'),
             'calories': float(result.get('calories', 0)),
@@ -144,25 +162,25 @@ def estimate_nutrition_from_image(image_bytes, mime_type):
             'basis': result.get('basis', ''),
         }
     except Exception as e:
-        logger.error(f"Gemini API image error: {e}")
+        logger.error(f"OpenRouter API image error: {e}")
         return {'food_name': None, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'basis': ''}
 
 
 def parse_and_estimate_foods(text):
     """
-    Parse free-form text describing one or more foods and estimate nutrition for each.
-    Returns a list of dicts, each with keys: name, calories, protein, carbs, fat, basis.
-    Returns None on failure.
+    Parse free-form text describing foods and estimate nutrition for each.
+    Returns a list of dicts, or None on failure.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not set, cannot parse foods")
+    if not OPENROUTER_API_KEY:
+        logger.warning("OPEN_ROUTER_ID not set, cannot parse foods")
         return None
 
     prompt = parse_foods_prompt(text)
 
     try:
-        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
-        result = _parse_gemini_json(data)
+        messages = [{'role': 'user', 'content': prompt}]
+        response_text = _openrouter_request(messages, TEXT_MODELS)
+        result = _parse_response_json(response_text)
         if isinstance(result, dict):
             result = [result]
         foods = []
@@ -178,19 +196,17 @@ def parse_and_estimate_foods(text):
             })
         return foods if foods else None
     except Exception as e:
-        logger.error(f"Gemini API error for parse_and_estimate_foods: {e}")
+        logger.error(f"OpenRouter API error for parse_and_estimate_foods: {e}")
         return None
 
 
 def modify_food_estimation(original_food, modification):
     """
     Re-estimate nutrition for an existing food entry based on user's modification.
-    original_food: dict with keys name, description, calories, protein, carbs, fat, basis
-    modification: user's modification text (e.g. "其實只有半碗", "加了一顆蛋", "飯量比較少")
     Returns dict with keys: name, description, calories, protein, carbs, fat, basis.
     Returns None on failure.
     """
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         return None
 
     desc = original_food.get('description', '')
@@ -205,8 +221,9 @@ def modify_food_estimation(original_food, modification):
     prompt = modify_food_prompt(original_desc, original_nutrition, original_food.get('basis', ''), modification)
 
     try:
-        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
-        result = _parse_gemini_json(data)
+        messages = [{'role': 'user', 'content': prompt}]
+        text = _openrouter_request(messages, TEXT_MODELS)
+        result = _parse_response_json(text)
         return {
             'name': result.get('name', original_food['name']),
             'description': result.get('description', ''),
@@ -217,16 +234,16 @@ def modify_food_estimation(original_food, modification):
             'basis': result.get('basis', ''),
         }
     except Exception as e:
-        logger.error(f"Gemini API error for modify_food_estimation: {e}")
+        logger.error(f"OpenRouter API error for modify_food_estimation: {e}")
         return None
 
 
 def generate_diet_advice(foods, tdee=None, user_prompt=''):
     """
-    Ask Gemini for dietary advice based on today's food log.
+    Ask OpenRouter for dietary advice based on today's food log.
     Returns advice string, or None on failure.
     """
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         return None
 
     food_summary = []
@@ -254,8 +271,8 @@ def generate_diet_advice(foods, tdee=None, user_prompt=''):
     prompt = diet_advice_prompt(food_list, total_cal, tdee_info, question)
 
     try:
-        data = _gemini_request({'contents': [{'parts': [{'text': prompt}]}]}, timeout=15)
-        return data['candidates'][0]['content']['parts'][0]['text'].strip()
+        messages = [{'role': 'user', 'content': prompt}]
+        return _openrouter_request(messages, TEXT_MODELS)
     except Exception as e:
-        logger.error(f"Gemini diet advice error: {e}")
+        logger.error(f"OpenRouter diet advice error: {e}")
         return None

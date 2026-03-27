@@ -17,7 +17,7 @@ from .dietary_storage import (
     delete_entry_by_id,
     add_entry_for_date,
 )
-from .gemini_api import parse_and_estimate_foods, modify_food_estimation, estimate_nutrition_from_image
+from .ai_api import parse_and_estimate_foods, modify_food_estimation, estimate_nutrition_from_image
 
 logger = logging.getLogger(__name__)
 

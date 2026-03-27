@@ -34,7 +34,7 @@ from .dietary_storage import (
     get_food_entry_by_index, update_food_entry, get_today_log, get_history,
     get_all_users_today, set_tdee, get_tdee,
 )
-from .gemini_api import (
+from .ai_api import (
     estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
     modify_food_estimation, generate_diet_advice,
 )
