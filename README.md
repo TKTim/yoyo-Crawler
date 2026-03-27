@@ -346,3 +346,8 @@ Add or remove a push target.
 ```
 ssh -i LightsailDefaultKey-ap-northeast-1.pem ubuntu@52.199.42.223
 ```
+
+#### check log
+```
+sudo journalctl -u yoyo-linebot -f
+```

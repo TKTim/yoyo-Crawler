@@ -20,6 +20,7 @@ from linebot.v3.messaging import (
     TextMessage,
     QuickReply,
     QuickReplyItem,
+    MessageAction,
     CameraAction,
     CameraRollAction,
 )
@@ -167,7 +168,7 @@ def build_daily_report(foods):
     if not foods:
         return "No food logged today."
 
-    lines = ["Today's food log:"]
+    lines = ["📋 Today's Food Log", "─" * 20]
     total_cal = total_p = total_c = total_f = 0
 
     for i, food in enumerate(foods, 1):
@@ -180,15 +181,19 @@ def build_daily_report(foods):
         name_str = f"{food['name']} ({desc})" if desc else food['name']
 
         if cal is not None:
-            lines.append(f"{i}. {name_str} — {cal:.0f} kcal, {p:.1f}g P, {c:.1f}g C, {f:.1f}g F")
+            lines.append(f"{i}. {name_str}")
+            lines.append(f"    {cal:.0f} kcal | P {p:.1f}g | C {c:.1f}g | F {f:.1f}g")
             total_cal += cal
             total_p += p or 0
             total_c += c or 0
             total_f += f or 0
         else:
-            lines.append(f"{i}. {name_str} — nutrition unavailable")
+            lines.append(f"{i}. {name_str}")
+            lines.append(f"    nutrition unavailable")
 
-    lines.append(f"\nTotal: {total_cal:.0f} kcal, {total_p:.1f}g protein, {total_c:.1f}g carbs, {total_f:.1f}g fat")
+    lines.append("─" * 20)
+    lines.append(f"🔥 {total_cal:.0f} kcal")
+    lines.append(f"   P {total_p:.1f}g  |  C {total_c:.1f}g  |  F {total_f:.1f}g")
     return "\n".join(lines)
 
 
@@ -238,12 +243,21 @@ def handle_text_message(event):
             text = raw_text.lower()
 
     if user_id and _pending_remove.pop(user_id, False):
+        if text == '取消':
+            with ApiClient(configuration) as api_client:
+                _reply(MessagingApi(api_client), event.reply_token, "已取消")
+            return
         if not _is_command(text):
             raw_text = f'{Cmd.REMOVE.value} {raw_text}'
             text = raw_text.lower()
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
+
+        # Cancel command (from Quick Reply buttons)
+        if text == '取消':
+            _reply(line_bot_api, event.reply_token, "已取消")
+            return
 
         # Help command (no auth required)
         if text == Cmd.HELP:
@@ -356,17 +370,40 @@ def handle_text_message(event):
         if text == Cmd.REMOVE or text.startswith(Cmd.REMOVE + ' '):
             args_text = raw_text[6:].strip() if len(raw_text) > 6 else ''
 
-            # Bare "remove" — show today's log and wait for index input
+            # Bare "remove" — show today's log with Quick Reply buttons
             if not args_text:
                 foods = get_today_log(user_id)
                 if not foods:
-                    response = "No food logged today."
-                else:
-                    _pending_remove[user_id] = True
-                    report = build_daily_report(foods)
-                    response = f"{report}\n\n請輸入要刪除的編號（可多筆，空格隔開）\n例: 1 3"
+                    _reply(line_bot_api, event.reply_token, "No food logged today.")
+                    return
 
-                _reply(line_bot_api, event.reply_token, response)
+                report = build_daily_report(foods)
+
+                # Quick Reply supports max 13 items; use 12 for food + 1 cancel
+                if len(foods) <= 12:
+                    qr_items = []
+                    for i, food in enumerate(foods, 1):
+                        label = f"{i}. {food['name']}"
+                        if len(label) > 20:
+                            label = label[:19] + "…"
+                        qr_items.append(QuickReplyItem(
+                            action=MessageAction(label=label, text=f"remove {i}")
+                        ))
+                    qr_items.append(QuickReplyItem(
+                        action=MessageAction(label="取消", text="取消")
+                    ))
+                    _reply(
+                        line_bot_api, event.reply_token,
+                        f"{report}\n\n請點選要刪除的項目：",
+                        quick_reply=QuickReply(items=qr_items),
+                    )
+                else:
+                    # Fallback to text input for >12 entries
+                    _pending_remove[user_id] = True
+                    _reply(
+                        line_bot_api, event.reply_token,
+                        f"{report}\n\n請輸入要刪除的編號（可多筆，空格隔開）\n例: 1 3",
+                    )
                 return
 
             # Parse index numbers (support "1 3 5" or single "1")
@@ -476,14 +513,14 @@ def handle_text_message(event):
             if tdee:
                 total_cal = sum(f.get('calories', 0) or 0 for f in foods)
                 remaining = tdee - total_cal
-                report_lines += f"\n\nTDEE: {tdee} kcal | Remaining: {remaining:.0f} kcal"
+                report_lines += f"\n\n🎯 TDEE {tdee} kcal  |  Remaining {remaining:.0f} kcal"
 
             # Get AI advice
             user_prompt = raw_text[7:].strip() if len(raw_text) > 7 else ''
             if foods:
                 advice = generate_diet_advice(foods, tdee, user_prompt)
                 if advice:
-                    report_lines += f"\n\n--- AI Advice ---\n{advice}"
+                    report_lines += f"\n\n💡 AI Advice\n{'─' * 20}\n{advice}"
 
             _reply(line_bot_api, event.reply_token, report_lines)
             return

@@ -164,7 +164,7 @@ LOGGING = {
     'loggers': {
         'mylinebot_code': {
             'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'level': os.environ.get('LOG_LEVEL', 'INFO'),
         },
     },
 }
