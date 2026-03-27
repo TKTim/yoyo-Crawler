@@ -17,6 +17,7 @@ from .dietary_storage import (
     delete_entry_by_id,
     add_entry_for_date,
 )
+from .profile_storage import get_profile, save_profile
 from .ai_api import parse_and_estimate_foods, modify_food_estimation, estimate_nutrition_from_image
 
 logger = logging.getLogger(__name__)
@@ -244,3 +245,63 @@ def api_image_add(request):
     except Exception as e:
         logger.error(f"api_image_add error: {e}")
         return _json_error('圖片處理失敗，請再試一次', 500)
+
+
+# ── Profile views ─────────────────────────────────────────────────────────────
+
+def liff_profile(request):
+    """Render the LIFF profile settings page."""
+    return render(request, 'liff_profile.html', {
+        'liff_id': settings.LIFF_ID,
+    })
+
+
+@csrf_exempt
+def api_profile(request):
+    """
+    GET  → return profile data for authenticated user
+    POST → save profile data
+    """
+    user_id = _get_liff_user_id(request)
+    if not user_id:
+        return _json_error('Unauthorized', 401)
+
+    if request.method == 'GET':
+        profile = get_profile(user_id)
+        if profile:
+            data = {
+                'gender': profile.gender,
+                'height': profile.height,
+                'weight': profile.weight,
+                'age': profile.age,
+                'activity_level': profile.activity_level,
+                'goal': profile.goal,
+            }
+            return JsonResponse({'status': 'ok', 'profile': data})
+        return JsonResponse({'status': 'ok', 'profile': None})
+
+    if request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return _json_error('Invalid JSON')
+
+        gender = body.get('gender', '')
+        height = body.get('height')
+        weight = body.get('weight')
+        age = body.get('age')
+
+        if gender not in ('male', 'female'):
+            return _json_error('Invalid gender')
+        if not height or not weight or not age:
+            return _json_error('Missing required fields')
+
+        save_profile(user_id, {
+            'gender': gender,
+            'height': float(height),
+            'weight': float(weight),
+            'age': int(age),
+        })
+        return JsonResponse({'status': 'ok'})
+
+    return _json_error('Method not allowed', 405)

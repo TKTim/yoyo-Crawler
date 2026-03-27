@@ -370,6 +370,11 @@ async function initLiff() {
     }
     ACCESS_TOKEN = liff.getAccessToken();
 
+    if (MODE === 'profile') {
+      window.location.href = '/liff/profile/';
+      return;
+    }
+
     if (MODE === 'add') {
       document.getElementById('pageHeader').textContent = '記錄飲食';
       document.getElementById('chartContainer').style.display = 'none';

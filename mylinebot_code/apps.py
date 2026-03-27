@@ -19,11 +19,12 @@ class MylinebotCodeConfig(AppConfig):
             return
 
         try:
-            from .gist_storage import load_articles_from_gist, load_users_from_gist, load_targets_from_gist, load_dietary_from_gist
+            from .gist_storage import load_articles_from_gist, load_users_from_gist, load_targets_from_gist, load_dietary_from_gist, load_profiles_from_gist
             load_articles_from_gist()
             load_users_from_gist()
             load_targets_from_gist()
             load_dietary_from_gist()
+            load_profiles_from_gist()
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Failed to load from Gist on startup: {e}")

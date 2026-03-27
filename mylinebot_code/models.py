@@ -64,3 +64,31 @@ class UserTdee(models.Model):
 
     def __str__(self):
         return f"{self.user_id}: {self.tdee} kcal"
+
+
+class UserProfile(models.Model):
+    """Member profile for BMR/TDEE calculation."""
+    user_id = models.CharField(max_length=100, unique=True)
+    gender = models.CharField(max_length=10)       # 'male' / 'female'
+    height = models.FloatField()                    # cm
+    weight = models.FloatField()                    # kg
+    age = models.IntegerField()
+    activity_level = models.CharField(max_length=20, blank=True, default='')
+    goal = models.CharField(max_length=20, blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def calculate_bmr(self):
+        """Mifflin-St Jeor formula."""
+        if self.gender == 'male':
+            return (10 * self.weight) + (6.25 * self.height) - (5 * self.age) + 5
+        return (10 * self.weight) + (6.25 * self.height) - (5 * self.age) - 161
+
+    def calculate_tdee(self):
+        multipliers = {
+            'sedentary': 1.2, 'light': 1.375, 'moderate': 1.55,
+            'active': 1.725, 'very_active': 1.9,
+        }
+        return self.calculate_bmr() * multipliers.get(self.activity_level, 1.2)
+
+    def __str__(self):
+        return f"{self.user_id}: {self.gender} {self.height}cm {self.weight}kg"

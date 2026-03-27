@@ -1,18 +1,16 @@
 """
-Management command to create and configure LINE Rich Menu.
-Generates a menu image programmatically using Pillow.
+Management command to create and configure LINE Rich Menu (dual menus with aliases).
+Generates menu images programmatically using Pillow.
 
 Usage:
-  python manage.py setup_richmenu --create    # Create & set as default
-  python manage.py setup_richmenu --delete    # Delete current default
-  python manage.py setup_richmenu --list      # List all rich menus
+  python manage.py setup_richmenu --create    # Create both menus, aliases & set default
+  python manage.py setup_richmenu --delete    # Delete aliases + all menus
+  python manage.py setup_richmenu --list      # List all rich menus + aliases
 """
 import io
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-
-from django.conf import settings
 
 from linebot.v3.messaging import (
     Configuration,
@@ -25,6 +23,8 @@ from linebot.v3.messaging import (
     RichMenuSize,
     MessageAction,
     URIAction,
+    RichMenuSwitchAction,
+    CreateRichMenuAliasRequest,
 )
 
 
@@ -36,9 +36,22 @@ ROWS = 2
 CELL_W = MENU_WIDTH // COLS
 CELL_H = MENU_HEIGHT // ROWS
 
-# Button definitions: (label, action_text, color)
-# action_text starting with 'https://' will use URIAction instead of MessageAction
-BUTTONS = [
+# Alias IDs (must match ^[a-z0-9_-]{1,32}$)
+ALIAS_MAIN = 'richmenu_main'
+ALIAS_MORE = 'richmenu_more'
+
+# Button definitions: (label, action_key, color)
+# Special action_key prefixes:
+#   __liff__        → URIAction to LIFF editor
+#   __liff_add__    → URIAction to LIFF editor in add mode
+#   __liff_profile__→ URIAction to LIFF editor in profile mode
+#   __menu1__       → RichMenuSwitchAction to main menu
+#   __menu2__       → RichMenuSwitchAction to more menu
+#   __goal__        → MessageAction with '會員目標'
+#   __placeholder__ → MessageAction with '此功能即將推出'
+#   anything else   → MessageAction with that text
+
+MENU1_BUTTONS = [
     # Row 1
     ('記錄飲食', '__liff_add__', '#4CAF50'),
     ('今日紀錄', 'today', '#2196F3'),
@@ -46,12 +59,23 @@ BUTTONS = [
     # Row 2
     ('刪除紀錄', 'remove', '#F44336'),
     ('編輯紀錄', '__liff__', '#9C27B0'),
+    ('更多功能', '__menu2__', '#607D8B'),
+]
+
+MENU2_BUTTONS = [
+    # Row 1
+    ('會員設定', '__liff_profile__', '#00897B'),
+    ('會員目標', '__goal__', '#5C6BC0'),
     ('指令說明', 'help', '#607D8B'),
+    # Row 2
+    ('即將推出', '__placeholder__', '#BDBDBD'),
+    ('即將推出', '__placeholder__', '#BDBDBD'),
+    ('返回主選單', '__menu1__', '#455A64'),
 ]
 
 
-def _generate_menu_image():
-    """Generate rich menu image with Pillow."""
+def _generate_menu_image(buttons):
+    """Generate rich menu image with Pillow for the given button list."""
     from PIL import Image, ImageDraw, ImageFont
 
     img = Image.new('RGB', (MENU_WIDTH, MENU_HEIGHT), '#FFFFFF')
@@ -104,7 +128,7 @@ def _generate_menu_image():
             "  sudo apt install fonts-wqy-zenhei"
         )
 
-    for i, (label, _, color) in enumerate(BUTTONS):
+    for i, (label, _, color) in enumerate(buttons):
         col = i % COLS
         row = i // COLS
         x0 = col * CELL_W
@@ -134,11 +158,11 @@ def _generate_menu_image():
     return buf
 
 
-def _build_rich_menu_areas():
+def _build_rich_menu_areas(buttons):
     """Build area definitions mapping each button region to its action."""
     liff_id = settings.LIFF_ID
     areas = []
-    for i, (label, action_text, _) in enumerate(BUTTONS):
+    for i, (label, action_key, _) in enumerate(buttons):
         col = i % COLS
         row = i // COLS
 
@@ -149,24 +173,35 @@ def _build_rich_menu_areas():
             height=CELL_H,
         )
 
-        if action_text == '__liff__':
+        if action_key == '__liff__':
             action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}')
-        elif action_text == '__liff_add__':
+        elif action_key == '__liff_add__':
             action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=add')
+        elif action_key == '__liff_profile__':
+            action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=profile')
+        elif action_key == '__menu1__':
+            action = RichMenuSwitchAction(label=label, rich_menu_alias_id=ALIAS_MAIN, data='switch_main')
+        elif action_key == '__menu2__':
+            action = RichMenuSwitchAction(label=label, rich_menu_alias_id=ALIAS_MORE, data='switch_more')
+        elif action_key == '__goal__':
+            action = MessageAction(label=label, text='會員目標')
+        elif action_key == '__placeholder__':
+            action = MessageAction(label=label, text='此功能即將推出')
         else:
-            action = MessageAction(label=label, text=action_text)
+            action = MessageAction(label=label, text=action_key)
+
         areas.append(RichMenuArea(bounds=bounds, action=action))
 
     return areas
 
 
 class Command(BaseCommand):
-    help = 'Create and manage LINE Rich Menu'
+    help = 'Create and manage LINE Rich Menu (dual menus with aliases)'
 
     def add_arguments(self, parser):
-        parser.add_argument('--create', action='store_true', help='Create rich menu and set as default')
-        parser.add_argument('--delete', action='store_true', help='Delete current default rich menu')
-        parser.add_argument('--list', action='store_true', help='List all rich menus')
+        parser.add_argument('--create', action='store_true', help='Create rich menus and set as default')
+        parser.add_argument('--delete', action='store_true', help='Delete all rich menus and aliases')
+        parser.add_argument('--list', action='store_true', help='List all rich menus and aliases')
 
     def handle(self, *args, **options):
         configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
@@ -188,60 +223,128 @@ class Command(BaseCommand):
             api = MessagingApi(api_client)
             blob_api = MessagingApiBlob(api_client)
 
-            # 1. Create rich menu
-            rich_menu_request = RichMenuRequest(
+            # 1. Create main menu (Menu 1)
+            menu1_request = RichMenuRequest(
                 size=RichMenuSize(width=MENU_WIDTH, height=MENU_HEIGHT),
                 selected=True,
-                name='YoYo Diet Tracker',
+                name='YoYo Main Menu',
                 chat_bar_text='開啟選單',
-                areas=_build_rich_menu_areas(),
+                areas=_build_rich_menu_areas(MENU1_BUTTONS),
             )
+            result1 = api.create_rich_menu(menu1_request)
+            menu1_id = result1.rich_menu_id
+            self.stdout.write(f'Main menu created: {menu1_id}')
 
-            result = api.create_rich_menu(rich_menu_request)
-            menu_id = result.rich_menu_id
-            self.stdout.write(f'Rich menu created: {menu_id}')
-
-            # 2. Upload image
-            image_buf = _generate_menu_image()
+            # 2. Upload main menu image
+            image1_buf = _generate_menu_image(MENU1_BUTTONS)
             blob_api.set_rich_menu_image(
-                rich_menu_id=menu_id,
-                body=bytearray(image_buf.read()),
+                rich_menu_id=menu1_id,
+                body=bytearray(image1_buf.read()),
                 _headers={'Content-Type': 'image/png'},
             )
-            self.stdout.write('Image uploaded')
+            self.stdout.write('Main menu image uploaded')
 
-            # 3. Set as default
-            api.set_default_rich_menu(menu_id)
-            self.stdout.write(self.style.SUCCESS(f'Default rich menu set: {menu_id}'))
+            # 3. Create more menu (Menu 2)
+            menu2_request = RichMenuRequest(
+                size=RichMenuSize(width=MENU_WIDTH, height=MENU_HEIGHT),
+                selected=True,
+                name='YoYo More Menu',
+                chat_bar_text='開啟選單',
+                areas=_build_rich_menu_areas(MENU2_BUTTONS),
+            )
+            result2 = api.create_rich_menu(menu2_request)
+            menu2_id = result2.rich_menu_id
+            self.stdout.write(f'More menu created: {menu2_id}')
+
+            # 4. Upload more menu image
+            image2_buf = _generate_menu_image(MENU2_BUTTONS)
+            blob_api.set_rich_menu_image(
+                rich_menu_id=menu2_id,
+                body=bytearray(image2_buf.read()),
+                _headers={'Content-Type': 'image/png'},
+            )
+            self.stdout.write('More menu image uploaded')
+
+            # 5. Create aliases
+            api.create_rich_menu_alias(
+                CreateRichMenuAliasRequest(
+                    rich_menu_alias_id=ALIAS_MAIN,
+                    rich_menu_id=menu1_id,
+                )
+            )
+            self.stdout.write(f'Alias created: {ALIAS_MAIN} → {menu1_id}')
+
+            api.create_rich_menu_alias(
+                CreateRichMenuAliasRequest(
+                    rich_menu_alias_id=ALIAS_MORE,
+                    rich_menu_id=menu2_id,
+                )
+            )
+            self.stdout.write(f'Alias created: {ALIAS_MORE} → {menu2_id}')
+
+            # 6. Set main menu as default
+            api.set_default_rich_menu(menu1_id)
+            self.stdout.write(self.style.SUCCESS(f'Default rich menu set: {menu1_id}'))
 
     def _delete(self, configuration):
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
 
+            # Delete aliases first (they reference menus)
+            for alias_id in (ALIAS_MAIN, ALIAS_MORE):
+                try:
+                    api.delete_rich_menu_alias(alias_id)
+                    self.stdout.write(f'Deleted alias: {alias_id}')
+                except Exception as e:
+                    self.stderr.write(f'Could not delete alias {alias_id}: {e}')
+
+            # Cancel default
             try:
-                default = api.get_default_rich_menu_id()
-                menu_id = default.rich_menu_id
                 api.cancel_default_rich_menu()
-                api.delete_rich_menu(menu_id)
-                self.stdout.write(self.style.SUCCESS(f'Deleted default rich menu: {menu_id}'))
+                self.stdout.write('Cancelled default rich menu')
+            except Exception:
+                pass
+
+            # Delete all menus
+            try:
+                result = api.get_rich_menu_list()
+                for menu in (result.richmenus or []):
+                    api.delete_rich_menu(menu.rich_menu_id)
+                    self.stdout.write(f'Deleted menu: {menu.rich_menu_id} ({menu.name})')
             except Exception as e:
-                self.stderr.write(self.style.ERROR(f'No default rich menu or error: {e}'))
+                self.stderr.write(self.style.ERROR(f'Error deleting menus: {e}'))
+
+            self.stdout.write(self.style.SUCCESS('All rich menus and aliases deleted'))
 
     def _list(self, configuration):
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
 
+            # List menus
             result = api.get_rich_menu_list()
             if not result.richmenus:
                 self.stdout.write('No rich menus found')
-                return
+            else:
+                try:
+                    default = api.get_default_rich_menu_id()
+                    default_id = default.rich_menu_id
+                except Exception:
+                    default_id = None
 
+                self.stdout.write(f'Rich menus ({len(result.richmenus)}):')
+                for menu in result.richmenus:
+                    is_default = ' (DEFAULT)' if menu.rich_menu_id == default_id else ''
+                    self.stdout.write(f'  {menu.rich_menu_id} — {menu.name}{is_default}')
+
+            # List aliases
             try:
-                default = api.get_default_rich_menu_id()
-                default_id = default.rich_menu_id
-            except Exception:
-                default_id = None
-
-            for menu in result.richmenus:
-                is_default = ' (DEFAULT)' if menu.rich_menu_id == default_id else ''
-                self.stdout.write(f'{menu.rich_menu_id} — {menu.name}{is_default}')
+                alias_result = api.get_rich_menu_alias_list()
+                aliases = alias_result.aliases or []
+                if aliases:
+                    self.stdout.write(f'\nAliases ({len(aliases)}):')
+                    for alias in aliases:
+                        self.stdout.write(f'  {alias.rich_menu_alias_id} → {alias.rich_menu_id}')
+                else:
+                    self.stdout.write('\nNo aliases found')
+            except Exception as e:
+                self.stdout.write(f'\nCould not list aliases: {e}')
