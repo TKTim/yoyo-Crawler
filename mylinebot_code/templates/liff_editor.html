@@ -577,15 +577,13 @@ async function submitAddModeAi() {
   btn.innerHTML = '<span class="spinner"></span>估算中';
 
   try {
-    await apiFetch('/liff/api/ai-add/', {
+    const res = await apiFetch('/liff/api/ai-add/', {
       method: 'POST',
       body: JSON.stringify({ text, date: today }),
     });
     input.value = '';
     showToast('已新增');
-    if (liff.isInClient()) {
-      setTimeout(() => liff.closeWindow(), 800);
-    }
+    showAddModeResult(res.entries);
   } catch (e) {
     showToast(e.message || '新增失敗');
   } finally {
@@ -610,16 +608,51 @@ async function submitAddModeManual() {
   };
 
   try {
-    await apiFetch('/liff/api/entries/', {
+    const res = await apiFetch('/liff/api/entries/', {
       method: 'POST',
       body: JSON.stringify(body),
     });
     showToast('已新增');
-    if (liff.isInClient()) {
-      setTimeout(() => liff.closeWindow(), 800);
-    }
+    showAddModeResult([res.entry]);
   } catch (e) {
     showToast('新增失敗: ' + e.message);
+  }
+}
+
+// ── Add-mode result display ───────────────────────────────────────────────
+function showAddModeResult(entries) {
+  const content = document.getElementById('content');
+  let html = '<div class="add-mode-section">';
+  html += '<div class="add-mode-card">';
+  html += `<h3>已記錄 ${entries.length} 項</h3>`;
+  for (const e of entries) {
+    const desc = e.description ? `<div class="entry-desc">${esc(e.description)}</div>` : '';
+    const basis = e.basis ? `<div class="entry-basis">${esc(e.basis)}</div>` : '';
+    html += `
+    <div class="entry-card" style="margin-bottom:8px;">
+      <div class="entry-name">${esc(e.name)}</div>
+      ${desc}
+      <div class="entry-macros">
+        <span class="macro macro-cal">${fmt(e.calories)} kcal</span>
+        <span class="macro">P ${fmt(e.protein)}g</span>
+        <span class="macro">C ${fmt(e.carbs)}g</span>
+        <span class="macro">F ${fmt(e.fat)}g</span>
+      </div>
+      ${basis}
+    </div>`;
+  }
+  html += '</div>';
+  html += '<button class="btn-add" onclick="renderAddMode()">繼續新增</button>';
+  html += '<button class="btn-add-outline" style="margin-top:8px;" onclick="closeAddMode()">關閉</button>';
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+function closeAddMode() {
+  if (liff.isInClient()) {
+    liff.closeWindow();
+  } else {
+    renderAddMode();
   }
 }
 
@@ -714,9 +747,9 @@ async function handlePhotoSelect(e) {
     status.textContent = '已新增: ' + data.entry.name;
     showToast('已新增: ' + data.entry.name);
 
-    if (MODE === 'add' && liff.isInClient()) {
-      setTimeout(() => liff.closeWindow(), 1200);
-    } else if (MODE !== 'add') {
+    if (MODE === 'add') {
+      showAddModeResult([data.entry]);
+    } else {
       await loadEntries();
     }
   } catch (e) {
