@@ -681,7 +681,12 @@ async function handlePhotoSelect(e) {
       headers: { 'Authorization': 'Bearer ' + ACCESS_TOKEN },
       body: formData,
     });
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (_) {
+      throw new Error('伺服器回應錯誤 (' + res.status + ')');
+    }
     if (!res.ok) throw new Error(data.message || 'API error');
 
     status.textContent = '已新增: ' + data.entry.name;

@@ -221,22 +221,26 @@ def api_image_add(request):
     if not date_str:
         return _json_error('Missing "date" field')
 
-    image_bytes = image_file.read()
-    mime_type = image_file.content_type or 'image/jpeg'
+    try:
+        image_bytes = image_file.read()
+        mime_type = image_file.content_type or 'image/jpeg'
 
-    result = estimate_nutrition_from_image(image_bytes, mime_type)
-    if not result.get('food_name'):
-        return _json_error('AI 無法辨識食物，請再試一次', 422)
+        result = estimate_nutrition_from_image(image_bytes, mime_type)
+        if not result.get('food_name'):
+            return _json_error('AI 無法辨識食物，請再試一次', 422)
 
-    food_entry = {
-        'name': result['food_name'],
-        'description': '',
-        'calories': result.get('calories'),
-        'protein': result.get('protein'),
-        'carbs': result.get('carbs'),
-        'fat': result.get('fat'),
-        'basis': result.get('basis', ''),
-    }
+        food_entry = {
+            'name': result['food_name'],
+            'description': '',
+            'calories': result.get('calories'),
+            'protein': result.get('protein'),
+            'carbs': result.get('carbs'),
+            'fat': result.get('fat'),
+            'basis': result.get('basis', ''),
+        }
 
-    entry = add_entry_for_date(user_id, date_str, food_entry)
-    return JsonResponse({'status': 'ok', 'entry': entry}, status=201)
+        entry = add_entry_for_date(user_id, date_str, food_entry)
+        return JsonResponse({'status': 'ok', 'entry': entry}, status=201)
+    except Exception as e:
+        logger.error(f"api_image_add error: {e}")
+        return _json_error('圖片處理失敗，請再試一次', 500)
