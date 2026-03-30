@@ -39,7 +39,6 @@ from .ai_api import (
     estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
     modify_food_estimation, generate_diet_advice,
 )
-from .profile_storage import get_profile, update_profile_goal
 
 
 # ── Command constants ──────────────────────────────────────────────────────────
@@ -91,26 +90,6 @@ _pending_add = {}
 
 # Track users waiting to input remove indices (user_id -> True)
 _pending_remove = {}
-
-# Track users in the goal-setting conversational flow
-# user_id -> {'step': 'activity'|'goal', 'bmr': float, 'activity_key': str}
-_pending_goal = {}
-
-# Activity level labels (Chinese → key)
-ACTIVITY_LABELS = {
-    '久坐不動': 'sedentary',
-    '輕量活動': 'light',
-    '中度活動': 'moderate',
-    '積極活動': 'active',
-    '非常積極': 'very_active',
-}
-
-# Goal labels (Chinese → key)
-GOAL_LABELS = {
-    '增肌': 'bulk',
-    '維持': 'maintain',
-    '減脂': 'cut',
-}
 
 
 def _reply(api, token, text, **kwargs):
@@ -272,85 +251,6 @@ def handle_text_message(event):
         if not _is_command(text):
             raw_text = f'{Cmd.REMOVE.value} {raw_text}'
             text = raw_text.lower()
-
-    # Goal-setting conversational flow intercept
-    if user_id and user_id in _pending_goal:
-        state = _pending_goal[user_id]
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-
-            if raw_text == '取消':
-                del _pending_goal[user_id]
-                _reply(line_bot_api, event.reply_token, "已取消目標設定")
-                return
-
-            if state['step'] == 'activity':
-                activity_key = ACTIVITY_LABELS.get(raw_text)
-                if not activity_key:
-                    _reply(line_bot_api, event.reply_token, "請從選單中選擇活動量等級")
-                    return
-
-                bmr = state['bmr']
-                multipliers = {
-                    'sedentary': 1.2, 'light': 1.375, 'moderate': 1.55,
-                    'active': 1.725, 'very_active': 1.9,
-                }
-                tdee = bmr * multipliers[activity_key]
-
-                state['step'] = 'goal'
-                state['activity_key'] = activity_key
-                state['tdee'] = tdee
-
-                _reply(
-                    line_bot_api, event.reply_token,
-                    f"你的 TDEE 約為 {tdee:.0f} kcal/天\n\n請選擇你的目標：",
-                    quick_reply=QuickReply(items=[
-                        QuickReplyItem(action=MessageAction(label="增肌 (+400 kcal)", text="增肌")),
-                        QuickReplyItem(action=MessageAction(label="維持 (不變)", text="維持")),
-                        QuickReplyItem(action=MessageAction(label="減脂 (×0.8)", text="減脂")),
-                        QuickReplyItem(action=MessageAction(label="取消", text="取消")),
-                    ]),
-                )
-                return
-
-            if state['step'] == 'goal':
-                goal_key = GOAL_LABELS.get(raw_text)
-                if not goal_key:
-                    _reply(line_bot_api, event.reply_token, "請從選單中選擇目標")
-                    return
-
-                tdee = state['tdee']
-                activity_key = state['activity_key']
-
-                if goal_key == 'bulk':
-                    target = int(tdee + 400)
-                elif goal_key == 'cut':
-                    target = int(tdee * 0.8)
-                else:
-                    target = int(tdee)
-
-                # Save to profile and TDEE
-                if not update_profile_goal(user_id, activity_key, goal_key):
-                    del _pending_goal[user_id]
-                    _reply(line_bot_api, event.reply_token, "設定失敗，請先完成會員資料")
-                    return
-                set_tdee(user_id, target)
-
-                del _pending_goal[user_id]
-
-                goal_names = {'bulk': '增肌', 'maintain': '維持', 'cut': '減脂'}
-                activity_names = {v: k for k, v in ACTIVITY_LABELS.items()}
-
-                _reply(
-                    line_bot_api, event.reply_token,
-                    f"目標設定完成！\n\n"
-                    f"BMR: {state['bmr']:.0f} kcal\n"
-                    f"活動量: {activity_names.get(activity_key, activity_key)}\n"
-                    f"TDEE: {tdee:.0f} kcal\n"
-                    f"目標: {goal_names.get(goal_key, goal_key)}\n"
-                    f"每日熱量目標: {target} kcal",
-                )
-                return
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -610,34 +510,11 @@ def handle_text_message(event):
             _reply(line_bot_api, event.reply_token, response)
             return
 
-        # Command: 會員目標 (goal setting flow)
+        # Command: 會員目標 (handled via LIFF page, but catch text input)
         if raw_text == Cmd.GOAL:
-            profile = get_profile(user_id)
-            if not profile:
-                _reply(
-                    line_bot_api, event.reply_token,
-                    "請先填寫會員設定（性別、身高、體重、年齡），才能計算目標。\n\n"
-                    "點選選單「更多功能」→「會員設定」",
-                )
-                return
-
-            bmr = profile.calculate_bmr()
-            _pending_goal[user_id] = {
-                'step': 'activity',
-                'bmr': bmr,
-            }
-
             _reply(
                 line_bot_api, event.reply_token,
-                f"你的 BMR (基礎代謝率) 約為 {bmr:.0f} kcal/天\n\n請選擇你的活動量等級：",
-                quick_reply=QuickReply(items=[
-                    QuickReplyItem(action=MessageAction(label="久坐不動", text="久坐不動")),
-                    QuickReplyItem(action=MessageAction(label="輕量活動", text="輕量活動")),
-                    QuickReplyItem(action=MessageAction(label="中度活動", text="中度活動")),
-                    QuickReplyItem(action=MessageAction(label="積極活動", text="積極活動")),
-                    QuickReplyItem(action=MessageAction(label="非常積極", text="非常積極")),
-                    QuickReplyItem(action=MessageAction(label="取消", text="取消")),
-                ]),
+                "請點選選單「更多功能」→「會員目標」來設定目標。",
             )
             return
 

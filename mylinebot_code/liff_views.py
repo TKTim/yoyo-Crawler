@@ -17,7 +17,8 @@ from .dietary_storage import (
     delete_entry_by_id,
     add_entry_for_date,
 )
-from .profile_storage import get_profile, save_profile
+from .profile_storage import get_profile, save_profile, update_profile_goal
+from .dietary_storage import set_tdee
 from .ai_api import parse_and_estimate_foods, modify_food_estimation, estimate_nutrition_from_image
 
 logger = logging.getLogger(__name__)
@@ -305,3 +306,77 @@ def api_profile(request):
         return JsonResponse({'status': 'ok'})
 
     return _json_error('Method not allowed', 405)
+
+
+# ── Goal views ────────────────────────────────────────────────────────────────
+
+def liff_goal(request):
+    """Render the LIFF goal-setting page."""
+    return render(request, 'liff_goal.html', {
+        'liff_id': settings.LIFF_ID,
+    })
+
+
+VALID_ACTIVITY_LEVELS = {'sedentary', 'light', 'moderate', 'active', 'very_active'}
+VALID_GOALS = {'bulk', 'maintain', 'cut'}
+
+ACTIVITY_MULTIPLIERS = {
+    'sedentary': 1.2, 'light': 1.375, 'moderate': 1.55,
+    'active': 1.725, 'very_active': 1.9,
+}
+
+
+@csrf_exempt
+def api_goal(request):
+    """
+    POST → save activity_level + goal, compute and set TDEE target.
+    Body: {"activity_level": "moderate", "goal": "cut"}
+    Returns: {"status": "ok", "bmr": 1500, "tdee": 2325, "target": 1860}
+    """
+    if request.method != 'POST':
+        return _json_error('Method not allowed', 405)
+
+    user_id = _get_liff_user_id(request)
+    if not user_id:
+        return _json_error('Unauthorized', 401)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error('Invalid JSON')
+
+    activity_level = body.get('activity_level', '')
+    goal = body.get('goal', '')
+
+    if activity_level not in VALID_ACTIVITY_LEVELS:
+        return _json_error('Invalid activity_level')
+    if goal not in VALID_GOALS:
+        return _json_error('Invalid goal')
+
+    profile = get_profile(user_id)
+    if not profile:
+        return _json_error('請先完成會員設定', 400)
+
+    # Save activity_level and goal to profile
+    update_profile_goal(user_id, activity_level, goal)
+
+    # Calculate target
+    bmr = profile.calculate_bmr()
+    tdee = bmr * ACTIVITY_MULTIPLIERS[activity_level]
+
+    if goal == 'bulk':
+        target = int(tdee + 400)
+    elif goal == 'cut':
+        target = int(tdee * 0.8)
+    else:
+        target = int(tdee)
+
+    # Set TDEE target
+    set_tdee(user_id, target)
+
+    return JsonResponse({
+        'status': 'ok',
+        'bmr': round(bmr),
+        'tdee': round(tdee),
+        'target': target,
+    })

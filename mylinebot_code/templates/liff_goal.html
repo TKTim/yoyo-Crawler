@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>會員目標</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  padding-bottom: 80px;
+}
+.header {
+  background: #5C6BC0;
+  color: #fff;
+  padding: 16px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.loading, .error-msg {
+  text-align: center;
+  padding: 40px 16px;
+  color: #888;
+}
+.error-msg { color: #d32f2f; }
+.form-section {
+  margin: 16px;
+}
+.form-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.form-card h3 {
+  font-size: 15px;
+  color: #555;
+  margin-bottom: 12px;
+}
+
+/* BMR info card */
+.info-card {
+  background: #e8eaf6;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.info-card .info-label {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+}
+.info-card .info-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #5C6BC0;
+}
+.info-card .info-unit {
+  font-size: 14px;
+  color: #888;
+}
+
+/* Radio card group (vertical) */
+.radio-card-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.radio-card input[type="radio"] {
+  display: none;
+}
+.radio-card label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.radio-card label .card-title {
+  font-size: 15px;
+  font-weight: 500;
+}
+.radio-card label .card-desc {
+  font-size: 12px;
+  color: #999;
+}
+.radio-card input[type="radio"]:checked + label {
+  border-color: #5C6BC0;
+  background: #e8eaf6;
+}
+.radio-card input[type="radio"]:checked + label .card-title {
+  color: #5C6BC0;
+  font-weight: 600;
+}
+
+/* Result display */
+.result-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  display: none;
+}
+.result-card.active { display: block; }
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.result-row .result-label { color: #666; }
+.result-row .result-value { font-weight: 600; }
+.result-row.result-highlight {
+  font-size: 16px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid #eee;
+}
+.result-row.result-highlight .result-value {
+  color: #5C6BC0;
+  font-size: 18px;
+}
+
+.btn-save {
+  background: #5C6BC0;
+  color: #fff;
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-link {
+  background: #fff;
+  color: #5C6BC0;
+  border: 2px solid #5C6BC0;
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; }
+.success-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  justify-content: center;
+  align-items: center;
+}
+.success-overlay.active { display: flex; }
+.success-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 32px 24px;
+  margin: 20px;
+  max-width: 320px;
+  text-align: center;
+}
+.success-card .checkmark {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.success-card p {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 4px;
+}
+.success-card .success-detail {
+  font-size: 14px;
+  color: #666;
+}
+
+/* No profile state */
+.no-profile {
+  text-align: center;
+  padding: 40px 16px;
+}
+.no-profile p {
+  font-size: 15px;
+  color: #666;
+  margin-bottom: 16px;
+}
+</style>
+</head>
+<body>
+<div class="header">會員目標</div>
+<div id="loading" class="loading">載入中...</div>
+<div id="error" class="error-msg" style="display:none;"></div>
+
+<!-- No profile state -->
+<div id="noProfile" class="no-profile" style="display:none;">
+  <p>請先完成會員設定（性別、身高、體重、年齡），<br>才能計算目標。</p>
+  <button class="btn-link" onclick="goToProfile()">前往會員設定</button>
+</div>
+
+<!-- Main form -->
+<div id="formContainer" class="form-section" style="display:none;">
+  <!-- BMR display -->
+  <div class="info-card">
+    <div class="info-label">你的基礎代謝率 (BMR)</div>
+    <div><span class="info-value" id="bmrValue">—</span> <span class="info-unit">kcal/天</span></div>
+  </div>
+
+  <!-- Activity level -->
+  <div class="form-card">
+    <h3>活動量等級</h3>
+    <div class="radio-card-group">
+      <div class="radio-card">
+        <input type="radio" name="activity" id="act-sedentary" value="sedentary" onchange="updateCalc()">
+        <label for="act-sedentary">
+          <div>
+            <div class="card-title">久坐不動</div>
+            <div class="card-desc">辦公室工作，幾乎不運動</div>
+          </div>
+          <div class="card-desc">×1.2</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="activity" id="act-light" value="light" onchange="updateCalc()">
+        <label for="act-light">
+          <div>
+            <div class="card-title">輕量活動</div>
+            <div class="card-desc">每週運動 1-3 天</div>
+          </div>
+          <div class="card-desc">×1.375</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="activity" id="act-moderate" value="moderate" onchange="updateCalc()">
+        <label for="act-moderate">
+          <div>
+            <div class="card-title">中度活動</div>
+            <div class="card-desc">每週運動 3-5 天</div>
+          </div>
+          <div class="card-desc">×1.55</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="activity" id="act-active" value="active" onchange="updateCalc()">
+        <label for="act-active">
+          <div>
+            <div class="card-title">積極活動</div>
+            <div class="card-desc">每週運動 6-7 天</div>
+          </div>
+          <div class="card-desc">×1.725</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="activity" id="act-very_active" value="very_active" onchange="updateCalc()">
+        <label for="act-very_active">
+          <div>
+            <div class="card-title">非常積極</div>
+            <div class="card-desc">高強度訓練或體力勞動</div>
+          </div>
+          <div class="card-desc">×1.9</div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goal -->
+  <div class="form-card">
+    <h3>你的目標</h3>
+    <div class="radio-card-group">
+      <div class="radio-card">
+        <input type="radio" name="goal" id="goal-bulk" value="bulk" onchange="updateCalc()">
+        <label for="goal-bulk">
+          <div class="card-title">增肌</div>
+          <div class="card-desc">TDEE + 400 kcal</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="goal" id="goal-maintain" value="maintain" onchange="updateCalc()">
+        <label for="goal-maintain">
+          <div class="card-title">維持</div>
+          <div class="card-desc">等於 TDEE</div>
+        </label>
+      </div>
+      <div class="radio-card">
+        <input type="radio" name="goal" id="goal-cut" value="cut" onchange="updateCalc()">
+        <label for="goal-cut">
+          <div class="card-title">減脂</div>
+          <div class="card-desc">TDEE × 0.8</div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live calculation result -->
+  <div class="result-card" id="resultCard">
+    <div class="result-row">
+      <span class="result-label">BMR</span>
+      <span class="result-value" id="resultBmr">—</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">TDEE</span>
+      <span class="result-value" id="resultTdee">—</span>
+    </div>
+    <div class="result-row result-highlight">
+      <span class="result-label">每日熱量目標</span>
+      <span class="result-value" id="resultTarget">—</span>
+    </div>
+  </div>
+
+  <button class="btn-save" id="saveBtn" onclick="saveGoal()">儲存目標</button>
+</div>
+
+<div id="successOverlay" class="success-overlay">
+  <div class="success-card">
+    <div class="checkmark">&#10003;</div>
+    <p>目標設定完成！</p>
+    <p class="success-detail" id="successDetail"></p>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const LIFF_ID = '{{ liff_id }}';
+let ACCESS_TOKEN = '';
+let BMR = 0;
+
+const MULTIPLIERS = {
+  sedentary: 1.2, light: 1.375, moderate: 1.55,
+  active: 1.725, very_active: 1.9,
+};
+
+async function initLiff() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    ACCESS_TOKEN = liff.getAccessToken();
+    await loadProfile();
+  } catch (e) {
+    showError('LIFF 初始化失敗: ' + e.message);
+  }
+}
+
+async function loadProfile() {
+  try {
+    const res = await fetch('/liff/api/profile/', {
+      headers: { 'Authorization': 'Bearer ' + ACCESS_TOKEN },
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.profile) {
+      // No profile — show message
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('noProfile').style.display = 'block';
+      return;
+    }
+
+    const p = data.profile;
+
+    // Calculate BMR client-side (Mifflin-St Jeor)
+    if (p.gender === 'male') {
+      BMR = (10 * p.weight) + (6.25 * p.height) - (5 * p.age) + 5;
+    } else {
+      BMR = (10 * p.weight) + (6.25 * p.height) - (5 * p.age) - 161;
+    }
+    document.getElementById('bmrValue').textContent = Math.round(BMR);
+
+    // Pre-select existing values
+    if (p.activity_level) {
+      const el = document.getElementById('act-' + p.activity_level);
+      if (el) el.checked = true;
+    }
+    if (p.goal) {
+      const el = document.getElementById('goal-' + p.goal);
+      if (el) el.checked = true;
+    }
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('formContainer').style.display = 'block';
+
+    updateCalc();
+  } catch (e) {
+    showError('載入失敗: ' + e.message);
+  }
+}
+
+function updateCalc() {
+  const activity = document.querySelector('input[name="activity"]:checked');
+  const goal = document.querySelector('input[name="goal"]:checked');
+
+  if (!activity || !goal) {
+    document.getElementById('resultCard').classList.remove('active');
+    return;
+  }
+
+  const tdee = BMR * MULTIPLIERS[activity.value];
+  let target;
+  if (goal.value === 'bulk') {
+    target = tdee + 400;
+  } else if (goal.value === 'cut') {
+    target = tdee * 0.8;
+  } else {
+    target = tdee;
+  }
+
+  document.getElementById('resultBmr').textContent = Math.round(BMR) + ' kcal';
+  document.getElementById('resultTdee').textContent = Math.round(tdee) + ' kcal';
+  document.getElementById('resultTarget').textContent = Math.round(target) + ' kcal';
+  document.getElementById('resultCard').classList.add('active');
+}
+
+async function saveGoal() {
+  const activity = document.querySelector('input[name="activity"]:checked');
+  const goal = document.querySelector('input[name="goal"]:checked');
+
+  if (!activity) { showToast('請選擇活動量等級'); return; }
+  if (!goal) { showToast('請選擇目標'); return; }
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>儲存中';
+
+  try {
+    const res = await fetch('/liff/api/goal/', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        activity_level: activity.value,
+        goal: goal.value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'API error');
+
+    // Show success with details
+    document.getElementById('successDetail').textContent =
+      '每日熱量目標: ' + data.target + ' kcal';
+    document.getElementById('successOverlay').classList.add('active');
+    setTimeout(() => {
+      if (liff.isInClient()) {
+        liff.closeWindow();
+      } else {
+        document.getElementById('successOverlay').classList.remove('active');
+      }
+    }, 1500);
+  } catch (e) {
+    showToast('儲存失敗: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '儲存目標';
+  }
+}
+
+function goToProfile() {
+  window.location.href = '/liff/profile/';
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+initLiff();
+</script>
+</body>
+</html>

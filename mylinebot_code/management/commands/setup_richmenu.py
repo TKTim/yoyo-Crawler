@@ -45,9 +45,9 @@ ALIAS_MORE = 'richmenu_more'
 #   __liff__        → URIAction to LIFF editor
 #   __liff_add__    → URIAction to LIFF editor in add mode
 #   __liff_profile__→ URIAction to LIFF editor in profile mode
+#   __liff_goal__   → URIAction to LIFF editor in goal mode
 #   __menu1__       → RichMenuSwitchAction to main menu
 #   __menu2__       → RichMenuSwitchAction to more menu
-#   __goal__        → MessageAction with '會員目標'
 #   __placeholder__ → MessageAction with '此功能即將推出'
 #   anything else   → MessageAction with that text
 
@@ -65,7 +65,7 @@ MENU1_BUTTONS = [
 MENU2_BUTTONS = [
     # Row 1
     ('會員設定', '__liff_profile__', '#00897B'),
-    ('會員目標', '__goal__', '#5C6BC0'),
+    ('會員目標', '__liff_goal__', '#5C6BC0'),
     ('指令說明', 'help', '#607D8B'),
     # Row 2
     ('即將推出', '__placeholder__', '#BDBDBD'),
@@ -179,12 +179,12 @@ def _build_rich_menu_areas(buttons):
             action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=add')
         elif action_key == '__liff_profile__':
             action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=profile')
+        elif action_key == '__liff_goal__':
+            action = URIAction(label=label, uri=f'https://liff.line.me/{liff_id}?mode=goal')
         elif action_key == '__menu1__':
             action = RichMenuSwitchAction(label=label, rich_menu_alias_id=ALIAS_MAIN, data='switch_main')
         elif action_key == '__menu2__':
             action = RichMenuSwitchAction(label=label, rich_menu_alias_id=ALIAS_MORE, data='switch_more')
-        elif action_key == '__goal__':
-            action = MessageAction(label=label, text='會員目標')
         elif action_key == '__placeholder__':
             action = MessageAction(label=label, text='此功能即將推出')
         else:

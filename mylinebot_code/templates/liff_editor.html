@@ -375,6 +375,11 @@ async function initLiff() {
       return;
     }
 
+    if (MODE === 'goal') {
+      window.location.href = '/liff/goal/';
+      return;
+    }
+
     if (MODE === 'add') {
       document.getElementById('pageHeader').textContent = '記錄飲食';
       document.getElementById('chartContainer').style.display = 'none';

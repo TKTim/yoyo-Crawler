@@ -38,7 +38,9 @@ urlpatterns = [
     path('liff/api/ai-modify/<int:entry_id>/', liff_views.api_ai_modify, name='liff_api_ai_modify'),
     path('liff/api/image-add/', liff_views.api_image_add, name='liff_api_image_add'),
 
-    # LIFF profile
+    # LIFF profile & goal
     path('liff/profile/', liff_views.liff_profile, name='liff_profile'),
     path('liff/api/profile/', liff_views.api_profile, name='liff_api_profile'),
+    path('liff/goal/', liff_views.liff_goal, name='liff_goal'),
+    path('liff/api/goal/', liff_views.api_goal, name='liff_api_goal'),
 ]
