@@ -344,7 +344,11 @@ Add or remove a push target.
 
 #### ssh to aws
 ```
+# Lightsail
 ssh -i LightsailDefaultKey-ap-northeast-1.pem ubuntu@52.199.42.223
+
+# EC2
+ssh -i aws-tim-test-ec2.pem ubuntu@54.116.130.255
 ```
 
 #### check log

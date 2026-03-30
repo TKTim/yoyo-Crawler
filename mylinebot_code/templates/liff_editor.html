@@ -360,6 +360,7 @@ const MODE = '{{ mode }}';
 let ACCESS_TOKEN = '';
 let ENTRIES_DATA = {};
 let USER_TDEE = null;
+let USER_STREAK = 0;
 
 // ── LIFF Init ─────────────────────────────────────────────────────────────────
 async function initLiff() {
@@ -416,6 +417,8 @@ async function loadEntries() {
     const res = await apiFetch('/liff/api/entries/');
     ENTRIES_DATA = res.data;
     USER_TDEE = res.tdee;
+    USER_STREAK = res.streak || 0;
+    updateHeader();
     renderEntries();
     renderChart();
     document.getElementById('loading').style.display = 'none';
@@ -1096,6 +1099,15 @@ function showError(msg) {
   const el = document.getElementById('error');
   el.textContent = msg;
   el.style.display = 'block';
+}
+
+function updateHeader() {
+  const header = document.getElementById('pageHeader');
+  if (USER_STREAK > 0) {
+    header.textContent = `飲食紀錄編輯器  🔥 連續 ${USER_STREAK} 天`;
+  } else {
+    header.textContent = '飲食紀錄編輯器';
+  }
 }
 
 function showToast(msg) {

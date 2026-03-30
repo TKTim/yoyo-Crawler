@@ -31,6 +31,66 @@ def _entry_to_dict(entry):
     }
 
 
+def update_streak(user_id):
+    """
+    Update user's streak count based on today's date.
+    Called whenever a food entry is added.
+    - If streak_last_date == today → no change
+    - If streak_last_date == yesterday → increment streak
+    - Otherwise → reset to 1
+    """
+    from .models import UserProfile
+    from .gist_storage import save_profiles_to_gist
+
+    today = _today_date()
+    profile, created = UserProfile.objects.get_or_create(
+        user_id=user_id,
+        defaults={
+            'gender': '',
+            'height': 0,
+            'weight': 0,
+            'age': 0,
+            'streak_count': 1,
+            'streak_last_date': today,
+        }
+    )
+
+    if created:
+        # New profile, streak already set to 1
+        save_profiles_to_gist()
+        return
+
+    if profile.streak_last_date == today:
+        # Already logged today, no change
+        return
+
+    yesterday = today - timedelta(days=1)
+    if profile.streak_last_date == yesterday:
+        # Consecutive day, increment
+        profile.streak_count += 1
+    else:
+        # Streak broken, reset to 1
+        profile.streak_count = 1
+
+    profile.streak_last_date = today
+    profile.save()
+    save_profiles_to_gist()
+
+
+def get_streak(user_id):
+    """
+    Get user's current streak count.
+    Returns int (0 if no profile or no streak data).
+    """
+    from .models import UserProfile
+
+    profile = UserProfile.objects.filter(user_id=user_id).first()
+    if not profile or not profile.streak_last_date:
+        return 0
+
+    return profile.streak_count
+
+
 def add_food_entry(user_id, food_entry):
     """
     Append a food entry to today's log for a user, then sync to Gist.
@@ -52,6 +112,7 @@ def add_food_entry(user_id, food_entry):
         basis=food_entry.get('basis', ''),
     )
 
+    update_streak(user_id)
     save_dietary_to_gist()
     return True
 
@@ -82,6 +143,7 @@ def add_food_entries(user_id, food_entries):
     ]
     FoodEntry.objects.bulk_create(objects)
 
+    update_streak(user_id)
     save_dietary_to_gist()
     return True
 
@@ -324,6 +386,10 @@ def add_entry_for_date(user_id, date_str, food_entry):
         fat=food_entry.get('fat'),
         basis=food_entry.get('basis', ''),
     )
+
+    # Update streak if this is today's date
+    if date_type.fromisoformat(date_str) == _today_date():
+        update_streak(user_id)
 
     save_dietary_to_gist()
     return _entry_to_dict_with_id(entry)

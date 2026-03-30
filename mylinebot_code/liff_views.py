@@ -76,10 +76,11 @@ def api_entries(request):
         return _json_error('Unauthorized', 401)
 
     if request.method == 'GET':
-        from .dietary_storage import get_tdee
+        from .dietary_storage import get_tdee, get_streak
         data = get_entries_with_ids(user_id)
         tdee = get_tdee(user_id)
-        return JsonResponse({'status': 'ok', 'data': data, 'tdee': tdee})
+        streak = get_streak(user_id)
+        return JsonResponse({'status': 'ok', 'data': data, 'tdee': tdee, 'streak': streak})
 
     if request.method == 'POST':
         try:

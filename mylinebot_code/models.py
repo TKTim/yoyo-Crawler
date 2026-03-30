@@ -76,6 +76,8 @@ class UserProfile(models.Model):
     activity_level = models.CharField(max_length=20, blank=True, default='')
     goal = models.CharField(max_length=20, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
+    streak_count = models.IntegerField(default=0)
+    streak_last_date = models.DateField(null=True, blank=True)
 
     def calculate_bmr(self):
         """Mifflin-St Jeor formula."""

@@ -33,7 +33,7 @@ from .gist_storage import save_users_to_gist, save_targets_to_gist
 from .dietary_storage import (
     add_food_entry, add_food_entries, remove_food_entry, remove_food_entries,
     get_food_entry_by_index, update_food_entry, get_today_log, get_history,
-    get_all_users_today, get_tdee,
+    get_all_users_today, get_tdee, get_streak,
 )
 from .ai_api import (
     estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
@@ -493,6 +493,10 @@ def handle_text_message(event):
                 goal_label = _get_goal_label(user_id)
                 goal_str = f"  ({goal_label})" if goal_label else ""
                 response += f"\n\n🎯 目標 {tdee} kcal{goal_str}  |  剩餘 {remaining:.0f} kcal"
+
+            streak = get_streak(user_id)
+            if streak > 0:
+                response += f"\n🔥 連續 {streak} 天"
 
             _reply(line_bot_api, event.reply_token, response)
             return
@@ -1015,3 +1019,98 @@ def dietary_report_cron(request, secret):
     logger.info(f"Dietary report cron completed: {sent_count} reports sent")
     logger.info("=" * 50)
     return HttpResponse(f'OK: {sent_count} reports sent')
+
+
+@csrf_exempt
+@require_POST
+def dietary_reminder_cron(request, secret):
+    """
+    Cron endpoint to send reminders to users who haven't logged food in 7+ hours.
+    Skips reminders during night hours (22:00 to 08:00 Taiwan time).
+    """
+    from datetime import datetime, timedelta, timezone as dt_timezone
+    from .models import FoodEntry
+
+    logger.info("=" * 50)
+    logger.info("DIETARY REMINDER CRON STARTED")
+    logger.info("=" * 50)
+
+    expected_secret = getattr(settings, 'CRON_SECRET', '')
+    if not expected_secret or secret != expected_secret:
+        logger.warning("Dietary reminder cron rejected: invalid secret")
+        return HttpResponseForbidden('Invalid secret')
+
+    # Check current Taiwan time (UTC+8)
+    TW_TZ = dt_timezone(timedelta(hours=8))
+    now_tw = datetime.now(TW_TZ)
+    current_hour = now_tw.hour
+    logger.info(f"Current Taiwan time: {now_tw.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # Skip during night hours (22:00 to 08:00)
+    if current_hour >= 22 or current_hour < 8:
+        logger.info(f"Skipping reminders during night hours (current hour: {current_hour})")
+        logger.info("=" * 50)
+        return HttpResponse(f'OK: Skipped night hours (hour: {current_hour})')
+
+    # Get all push targets
+    targets = list(PushTarget.objects.values_list('target_id', flat=True))
+    logger.info(f"Total push targets: {len(targets)}")
+
+    if not targets:
+        logger.info("No push targets configured")
+        logger.info("=" * 50)
+        return HttpResponse('OK: No push targets')
+
+    # Check each target for recent activity
+    cutoff_time = now_tw - timedelta(hours=7)
+    sent_count = 0
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        for target_id in targets:
+            # Get the most recent food entry for this user
+            latest_entry = FoodEntry.objects.filter(
+                user_id=target_id
+            ).order_by('-added_at').first()
+
+            should_remind = False
+
+            if not latest_entry:
+                # No entries at all - send reminder
+                should_remind = True
+                logger.info(f"{target_id}: No entries found, sending reminder")
+            else:
+                # Convert latest entry time to Taiwan timezone
+                latest_time = latest_entry.added_at.astimezone(TW_TZ)
+                time_diff = now_tw - latest_time
+                hours_since = time_diff.total_seconds() / 3600
+
+                if hours_since > 7:
+                    should_remind = True
+                    logger.info(f"{target_id}: Last entry {hours_since:.1f}h ago, sending reminder")
+                else:
+                    logger.info(f"{target_id}: Last entry {hours_since:.1f}h ago, skip")
+
+            if should_remind:
+                reminder_msg = (
+                    "嗨！記得記錄今天的飲食喔～\n\n"
+                    "定期追蹤能幫助你更好地了解飲食習慣。\n"
+                    "點選下方選單「新增食物」或直接傳送食物照片給我吧！"
+                )
+
+                try:
+                    line_bot_api.push_message(
+                        PushMessageRequest(
+                            to=target_id,
+                            messages=[TextMessage(text=reminder_msg)]
+                        )
+                    )
+                    sent_count += 1
+                    logger.info(f"Sent reminder to {target_id}")
+                except Exception as e:
+                    logger.error(f"Failed to send reminder to {target_id}: {e}")
+
+    logger.info(f"Dietary reminder cron completed: {sent_count} reminders sent")
+    logger.info("=" * 50)
+    return HttpResponse(f'OK: {sent_count} reminders sent')

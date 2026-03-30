@@ -422,7 +422,12 @@ def save_profiles_to_gist():
 
     profiles = list(UserProfile.objects.all().values(
         'user_id', 'gender', 'height', 'weight', 'age', 'activity_level', 'goal',
+        'streak_count', 'streak_last_date',
     ))
+    # Convert dates to strings for JSON
+    for profile in profiles:
+        if profile.get('streak_last_date'):
+            profile['streak_last_date'] = profile['streak_last_date'].isoformat()
     content = json.dumps(profiles, ensure_ascii=False, indent=2)
 
     try:
@@ -482,6 +487,10 @@ def load_profiles_from_gist():
 
         loaded = 0
         for p in profiles:
+            streak_last_date = None
+            if p.get('streak_last_date'):
+                streak_last_date = date.fromisoformat(p['streak_last_date'])
+
             _, created = UserProfile.objects.get_or_create(
                 user_id=p['user_id'],
                 defaults={
@@ -491,6 +500,8 @@ def load_profiles_from_gist():
                     'age': p.get('age', 0),
                     'activity_level': p.get('activity_level', ''),
                     'goal': p.get('goal', ''),
+                    'streak_count': p.get('streak_count', 0),
+                    'streak_last_date': streak_last_date,
                 },
             )
             if created:

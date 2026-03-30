@@ -29,6 +29,7 @@ urlpatterns = [
     path('users/<str:secret>/', views.api_users, name='api_users'),
     path('targets/<str:secret>/', views.api_targets, name='api_targets'),
     path('dietary-report/<str:secret>/', views.dietary_report_cron, name='dietary_report_cron'),
+    path('dietary-reminder/<str:secret>/', views.dietary_reminder_cron, name='dietary_reminder_cron'),
 
     # LIFF web editor
     path('liff/editor/', liff_views.liff_editor, name='liff_editor'),
