@@ -359,6 +359,7 @@ const LIFF_ID = '{{ liff_id }}';
 const MODE = '{{ mode }}';
 let ACCESS_TOKEN = '';
 let ENTRIES_DATA = {};
+let USER_TDEE = null;
 
 // ── LIFF Init ─────────────────────────────────────────────────────────────────
 async function initLiff() {
@@ -414,6 +415,7 @@ async function loadEntries() {
   try {
     const res = await apiFetch('/liff/api/entries/');
     ENTRIES_DATA = res.data;
+    USER_TDEE = res.tdee;
     renderEntries();
     renderChart();
     document.getElementById('loading').style.display = 'none';
@@ -459,43 +461,58 @@ function renderChart() {
     chartInstance.destroy();
   }
 
+  const datasets = [
+    {
+      label: '熱量 (kcal)',
+      data: calData,
+      borderColor: '#e65100',
+      backgroundColor: 'rgba(230,81,0,0.1)',
+      yAxisID: 'yCal',
+      tension: 0.3,
+      pointRadius: 4,
+      pointBackgroundColor: '#e65100',
+    },
+    {
+      label: '蛋白質 (g)',
+      data: proData,
+      borderColor: '#1565c0',
+      backgroundColor: 'rgba(21,101,192,0.1)',
+      yAxisID: 'yGram',
+      tension: 0.3,
+      pointRadius: 4,
+      pointBackgroundColor: '#1565c0',
+    },
+    {
+      label: '碳水 (g)',
+      data: carbData,
+      borderColor: '#2e7d32',
+      backgroundColor: 'rgba(46,125,50,0.1)',
+      yAxisID: 'yGram',
+      tension: 0.3,
+      pointRadius: 4,
+      pointBackgroundColor: '#2e7d32',
+    },
+  ];
+
+  if (USER_TDEE) {
+    datasets.push({
+      label: '目標 (kcal)',
+      data: Array(7).fill(USER_TDEE),
+      borderColor: '#d32f2f',
+      borderDash: [6, 4],
+      borderWidth: 2,
+      pointRadius: 0,
+      yAxisID: 'yCal',
+      fill: false,
+    });
+  }
+
   const ctx = document.getElementById('weeklyChart').getContext('2d');
   chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
-      datasets: [
-        {
-          label: '熱量 (kcal)',
-          data: calData,
-          borderColor: '#e65100',
-          backgroundColor: 'rgba(230,81,0,0.1)',
-          yAxisID: 'yCal',
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#e65100',
-        },
-        {
-          label: '蛋白質 (g)',
-          data: proData,
-          borderColor: '#1565c0',
-          backgroundColor: 'rgba(21,101,192,0.1)',
-          yAxisID: 'yGram',
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#1565c0',
-        },
-        {
-          label: '碳水 (g)',
-          data: carbData,
-          borderColor: '#2e7d32',
-          backgroundColor: 'rgba(46,125,50,0.1)',
-          yAxisID: 'yGram',
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#2e7d32',
-        },
-      ],
+      datasets,
     },
     options: {
       responsive: true,

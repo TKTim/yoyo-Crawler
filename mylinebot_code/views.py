@@ -33,7 +33,7 @@ from .gist_storage import save_users_to_gist, save_targets_to_gist
 from .dietary_storage import (
     add_food_entry, add_food_entries, remove_food_entry, remove_food_entries,
     get_food_entry_by_index, update_food_entry, get_today_log, get_history,
-    get_all_users_today, set_tdee, get_tdee,
+    get_all_users_today, get_tdee,
 )
 from .ai_api import (
     estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
@@ -57,7 +57,6 @@ class Cmd(str, Enum):
     DB = 'db'
     CLEAR = 'clear'
     ARTICLES = 'articles'
-    SET_TDEE = 'set tdee'
     GOAL = '會員目標'
     ADDUSER = 'adduser'
     REMOVEUSER = 'removeuser'
@@ -292,7 +291,6 @@ def handle_text_message(event):
                 "▸ modify {編號} {修改內容} — AI 重新估算",
                 "▸ today — 顯示今日飲食紀錄",
                 "▸ history — 過去 7 天飲食摘要",
-                "▸ set tdee {數字} — 設定每日熱量目標",
                 "▸ report — 飲食報告 + AI 建議",
                 "▸ report {問題} — 自訂飲食問題",
                 "",
@@ -513,19 +511,6 @@ def handle_text_message(event):
                     display_date = date_str[5:].replace('-', '/')
                     lines.append(f"{display_date} — {total_cal:.0f} kcal ({count} items)")
                 response = "\n".join(lines)
-
-            _reply(line_bot_api, event.reply_token, response)
-            return
-
-        # Command: set tdee (no auth required)
-        if text.startswith(Cmd.SET_TDEE + ' '):
-            parts = raw_text.split(maxsplit=2)
-            if len(parts) < 3 or not parts[2].isdigit():
-                response = "Usage: set tdee {number}\nExample: set tdee 2000"
-            else:
-                tdee_val = int(parts[2])
-                set_tdee(user_id, tdee_val)
-                response = f"TDEE set to {tdee_val} kcal/day"
 
             _reply(line_bot_api, event.reply_token, response)
             return

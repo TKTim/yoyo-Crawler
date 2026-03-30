@@ -43,7 +43,12 @@ deploy.sh                  # Git pull → pip install → migrate → collectsta
 - `user_id` (CharField, indexed), `date` (DateField, indexed)
 - `name`, `description`, `calories`, `protein`, `carbs`, `fat`, `basis`, `added_at`
 
-**UserTdee** — one row per user: `user_id` (unique), `tdee` (int)
+**UserTdee** — one row per user: `user_id` (unique), `tdee` (int, calorie target computed from profile + goal)
+
+**UserProfile** — member profile for BMR/TDEE calculation:
+- `user_id` (unique), `gender`, `height` (cm), `weight` (kg), `age`
+- `activity_level` (sedentary/light/moderate/active/very_active), `goal` (bulk/maintain/cut)
+- `calculate_bmr()` Mifflin-St Jeor, `calculate_tdee()` BMR × activity multiplier
 
 **ParsedArticle** — scraped forum articles: `title`, `url` (unique), `post_date`, `author`
 
@@ -59,7 +64,6 @@ deploy.sh                  # Git pull → pip install → migrate → collectsta
 | `today` | Show today's food log |
 | `history` | Past 7 days summary |
 | `report [question]` | Daily report + AI dietary advice |
-| `set tdee {num}` | Set daily calorie target |
 | Image message | AI identifies food from photo, logs it |
 
 Chinese aliases: `加`=add, `刪除`=remove, `修改`=modify, `今天`=today, `報告`=report, `歷史`=history
@@ -102,6 +106,7 @@ Rich Menu: `python manage.py setup_richmenu --delete && python manage.py setup_r
 ## Conventions
 
 - Taiwan timezone (UTC+8) for all date logic
+- LIFF weekly chart shows a red dashed "目標" line when the user has a TDEE target set (via goal page)
 - Food entry indices are 1-based in chat commands, but LIFF API uses Django PKs
 - All dietary storage functions do lazy imports of models (circular import avoidance)
 - CJK font required on server for Rich Menu image generation (`sudo apt install fonts-noto-cjk`)
