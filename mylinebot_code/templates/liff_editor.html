@@ -771,25 +771,27 @@ async function handlePhotoSelect(e) {
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderEntries() {
   const content = document.getElementById('content');
-  const dates = Object.keys(ENTRIES_DATA).sort().reverse();
+  const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
 
-  if (dates.length === 0) {
-    content.innerHTML = '<div class="loading">還沒有飲食紀錄</div>';
-    return;
+  // Build all 7 days (today + past 6), so empty days are also shown
+  const allDates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    allDates.push(d.toLocaleDateString('sv-SE'));
   }
 
-  const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
   let html = '';
 
-  for (const dateStr of dates) {
-    const entries = ENTRIES_DATA[dateStr];
+  for (const dateStr of allDates) {
+    const entries = ENTRIES_DATA[dateStr] || [];
     const display = formatDate(dateStr, today);
     const totalCal = entries.reduce((s, e) => s + (e.calories || 0), 0);
 
     html += '<div class="date-section">';
     html += `<div class="date-header">
       <span>${display}</span>
-      <span class="date-total">${totalCal.toFixed(0)} kcal</span>
+      <span class="date-total">${entries.length ? totalCal.toFixed(0) + ' kcal' : '無紀錄'}</span>
     </div>`;
 
     for (const entry of entries) {
