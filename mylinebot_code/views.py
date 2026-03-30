@@ -39,6 +39,7 @@ from .ai_api import (
     estimate_nutrition, estimate_nutrition_from_image, parse_and_estimate_foods,
     modify_food_estimation, generate_diet_advice,
 )
+from .profile_storage import get_profile
 
 
 # ── Command constants ──────────────────────────────────────────────────────────
@@ -196,6 +197,17 @@ def build_daily_report(foods):
     lines.append(f"🔥 {total_cal:.0f} kcal")
     lines.append(f"   P {total_p:.1f}g  |  C {total_c:.1f}g  |  F {total_f:.1f}g")
     return "\n".join(lines)
+
+
+GOAL_DISPLAY = {'bulk': '增肌', 'maintain': '維持', 'cut': '減脂'}
+
+
+def _get_goal_label(user_id):
+    """Return Chinese goal label for a user, or empty string if not set."""
+    profile = get_profile(user_id)
+    if profile and profile.goal:
+        return GOAL_DISPLAY.get(profile.goal, '')
+    return ''
 
 
 def health(request):
@@ -476,6 +488,14 @@ def handle_text_message(event):
             foods = get_today_log(user_id)
             response = build_daily_report(foods)
 
+            tdee = get_tdee(user_id)
+            if tdee:
+                total_cal = sum(f.get('calories', 0) or 0 for f in foods)
+                remaining = tdee - total_cal
+                goal_label = _get_goal_label(user_id)
+                goal_str = f"  ({goal_label})" if goal_label else ""
+                response += f"\n\n🎯 目標 {tdee} kcal{goal_str}  |  剩餘 {remaining:.0f} kcal"
+
             _reply(line_bot_api, event.reply_token, response)
             return
 
@@ -524,15 +544,17 @@ def handle_text_message(event):
             report_lines = build_daily_report(foods)
 
             tdee = get_tdee(user_id)
+            goal_label = _get_goal_label(user_id)
             if tdee:
                 total_cal = sum(f.get('calories', 0) or 0 for f in foods)
                 remaining = tdee - total_cal
-                report_lines += f"\n\n🎯 TDEE {tdee} kcal  |  Remaining {remaining:.0f} kcal"
+                goal_str = f"  ({goal_label})" if goal_label else ""
+                report_lines += f"\n\n🎯 目標 {tdee} kcal{goal_str}  |  剩餘 {remaining:.0f} kcal"
 
             # Get AI advice
             user_prompt = raw_text[7:].strip() if len(raw_text) > 7 else ''
             if foods:
-                advice = generate_diet_advice(foods, tdee, user_prompt)
+                advice = generate_diet_advice(foods, tdee, user_prompt, goal_label)
                 if advice:
                     report_lines += f"\n\n💡 AI Advice\n{'─' * 20}\n{advice}"
 
@@ -986,6 +1008,13 @@ def dietary_report_cron(request, secret):
         line_bot_api = MessagingApi(api_client)
         for uid, foods in users_today.items():
             report = build_daily_report(foods)
+            tdee = get_tdee(uid)
+            if tdee:
+                total_cal = sum(f.get('calories', 0) or 0 for f in foods)
+                remaining = tdee - total_cal
+                goal_label = _get_goal_label(uid)
+                goal_str = f"  ({goal_label})" if goal_label else ""
+                report += f"\n\n🎯 目標 {tdee} kcal{goal_str}  |  剩餘 {remaining:.0f} kcal"
             try:
                 line_bot_api.push_message(
                     PushMessageRequest(

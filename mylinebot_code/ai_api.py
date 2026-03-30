@@ -56,9 +56,9 @@ def modify_food_estimation(original_food, modification):
     return _fallback.modify_food_estimation(original_food, modification)
 
 
-def generate_diet_advice(foods, tdee=None, user_prompt=''):
-    result = _primary.generate_diet_advice(foods, tdee, user_prompt)
+def generate_diet_advice(foods, tdee=None, user_prompt='', goal=''):
+    result = _primary.generate_diet_advice(foods, tdee, user_prompt, goal)
     if result is not None:
         return result
     logger.info("Primary failed for generate_diet_advice, falling back")
-    return _fallback.generate_diet_advice(foods, tdee, user_prompt)
+    return _fallback.generate_diet_advice(foods, tdee, user_prompt, goal)

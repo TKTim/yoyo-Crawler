@@ -221,7 +221,7 @@ def modify_food_estimation(original_food, modification):
         return None
 
 
-def generate_diet_advice(foods, tdee=None, user_prompt=''):
+def generate_diet_advice(foods, tdee=None, user_prompt='', goal=''):
     """
     Ask Gemini for dietary advice based on today's food log.
     Returns advice string, or None on failure.
@@ -244,12 +244,14 @@ def generate_diet_advice(foods, tdee=None, user_prompt=''):
     tdee_info = ""
     if tdee:
         remaining = tdee - total_cal
-        tdee_info = f"\nUser's TDEE: {tdee} kcal/day. Remaining budget: {remaining:.0f} kcal."
+        tdee_info = f"\nUser's TDEE target: {tdee} kcal/day. Remaining budget: {remaining:.0f} kcal."
+    if goal:
+        tdee_info += f"\nUser's goal: {goal} (增肌=bulk/gain muscle, 維持=maintain, 減脂=cut/lose fat)."
 
     if user_prompt:
         question = user_prompt
     else:
-        question = "Give brief dietary advice based on today's intake. What's missing? What should I eat next? Keep it concise (under 200 characters)."
+        question = "Give brief dietary advice based on today's intake and the user's goal. What's missing? What should I eat next? Keep it concise (under 200 characters)."
 
     prompt = diet_advice_prompt(food_list, total_cal, tdee_info, question)
 
